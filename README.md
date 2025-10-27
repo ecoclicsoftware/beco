@@ -1,3 +1,2 @@
 # beco
-becomedical 
-dasfasdd 
+becomedical
