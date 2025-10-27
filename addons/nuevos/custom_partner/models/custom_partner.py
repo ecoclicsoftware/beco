@@ -103,6 +103,11 @@ class ResPartner(models.Model):
     @api.model
     def create(self, vals):
         current_user = self.env.user
+
+        # Asignar por defecto la compañía del usuario que crea el contacto
+        if not vals.get('company_id'):
+            vals['company_id'] = current_user.company_id.id
+
         if current_user.partner_id and current_user.partner_id.worker and current_user.partner_id.department:
             current_departments = current_user.partner_id.department
             vals['department'] = [(6, 0, current_departments.ids)]
