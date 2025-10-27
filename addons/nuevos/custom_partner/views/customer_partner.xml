@@ -1,0 +1,73 @@
+<odoo>
+    <record id="view_form_customer_custom" model="ir.ui.view">
+        <field name="name">res.partner.form.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form" />
+        <field name="arch" type="xml">
+            
+            <!-- Insertar después del campo VAT -->
+            <xpath expr="//field[@name='vat']" position="after">
+                <field name="is_worker_user" invisible="1" />
+
+                <field name="worker"
+                    widget="boolean_toggle"
+                    class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user', '=', True)]}"
+                    groups="base.group_system,base.group_user" />
+
+                <field name="supervisor"
+                    widget="boolean_toggle"
+                    class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user', '=', True)]}"
+                    groups="base.group_system,base.group_user" />
+
+                <field name="department"
+                    widget="many2many_tags"
+                    options="{'no_create': False}"
+                    attrs="{'invisible': [('is_worker_user', '=', True)]}"
+                    groups="base.group_system,base.group_user" />
+            </xpath>
+
+            <!-- Añadir campo assigned_worker_id en la pestaña de Ventas -->
+            <!-- <xpath expr="//page[@name='sales_purchases']" position="inside">
+                <group string="Asignación Comercial">
+                    <field name="assigned_worker_id" 
+                           string="Comercial Responsable"
+                           help="Comercial asignado a este cliente"
+                           attrs="{'readonly': [('is_worker_user', '=', True)]}"
+                           options="{'no_create': True, 'no_open': True}"/>
+                </group>
+            </xpath> -->
+        </field>
+    </record>
+
+    <record id="view_partner_search_department_filters" model="ir.ui.view">
+        <field name="name">res.partner.search.department.filters</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_res_partner_filter" />
+        <field name="arch" type="xml">
+            <search>
+                <filter string="Departamento Médico" name="filter_medical"
+                    domain="['|','|','|', ('department.name','ilike','Médico'), ('department.name','ilike','MEDICO'), ('department.name','ilike','médico'), ('department.name','ilike','Medico')]" />
+                <filter string="Departamento Estética" name="filter_aesthetic"
+                    domain="['|','|','|', ('department.name','ilike','Estética'), ('department.name','ilike','ESTETICA'), ('department.name','ilike','estética'), ('department.name','ilike','Estetica')]" />
+            </search>
+        </field>
+    </record>
+
+    <!-- Vista de lista para mostrar el campo también -->
+    <record id="view_tree_customer_custom" model="ir.ui.view">
+        <field name="name">res.partner.tree.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='display_name']" position="after">
+                <field name="worker" optional="hide" />
+                <field name="supervisor" optional="hide" />
+                <field name="department" optional="hide" />
+                <!-- Añadir campo assigned_worker_id en la vista lista -->
+                <!-- <field name="assigned_worker_id" string="Comercial" optional="show" /> -->
+            </xpath>
+        </field>
+    </record>
+</odoo>
