@@ -26,6 +26,11 @@
                     options="{'no_create': False}"
                     attrs="{'invisible': [('is_worker_user', '=', True)]}"
                     groups="base.group_system,base.group_user" />
+
+                <field name="company_assigned_id"
+                    options="{'no_create': True, 'no_open': True}"
+                    attrs="{'invisible': [('is_worker_user', '=', True)]}"
+                    groups="base.group_system,base.group_user" />
             </xpath>
 
             <!-- Añadir campo assigned_worker_id en la pestaña de Ventas -->
@@ -65,6 +70,7 @@
                 <field name="worker" optional="hide" />
                 <field name="supervisor" optional="hide" />
                 <field name="department" optional="hide" />
+                <field name="company_assigned_id" string="Compañía" optional="show" />
                 <!-- Añadir campo assigned_worker_id en la vista lista -->
                 <!-- <field name="assigned_worker_id" string="Comercial" optional="show" /> -->
             </xpath>

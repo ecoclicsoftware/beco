@@ -29,7 +29,24 @@ class ResPartner(models.Model):
         string='Es Usuario Comercial',
         compute='_compute_is_worker_user',
         help='Indica si el usuario actual es un comercial'
-    )    
+    )
+    
+    company_assigned_id = fields.Many2one(
+        'res.company',
+        string='Compañía Asignada',
+        ondelete='restrict',  # Evita eliminar compañías con contactos asignados
+        help='Compañía de Odoo asignada a este contacto'
+    )
+    
+    @api.onchange('worker')
+    def _onchange_worker(self):
+        if self.worker:
+            self.supervisor = False
+
+    @api.onchange('supervisor')
+    def _onchange_supervisor(self):
+        if self.supervisor:
+            self.worker = False
 
     @api.depends_context('uid')
     def _compute_is_worker_user(self):
@@ -103,60 +120,76 @@ class ResPartner(models.Model):
     @api.model
     def create(self, vals):
         current_user = self.env.user
-
+        # 🔥 EXCLUSIÓN PARA ADMINISTRADORES - No aplicar restricciones
+        if current_user._is_admin():
+            return super(ResPartner, self).create(vals)
+        # Exclusividad: Solo puede ser supervisor o comercial, nunca ambos
+        if vals.get('worker') and vals['worker']:
+            vals['supervisor'] = False
+        if vals.get('supervisor') and vals['supervisor']:
+            vals['worker'] = False
         # Asignar por defecto la compañía del usuario que crea el contacto
         if not vals.get('company_id'):
             vals['company_id'] = current_user.company_id.id
-
         if current_user.partner_id and current_user.partner_id.worker and current_user.partner_id.department:
             current_departments = current_user.partner_id.department
             vals['department'] = [(6, 0, current_departments.ids)]
             vals['worker'] = False
             vals['supervisor'] = False
-            if vals.get('vat'):
-                self._validate_duplicate_in_department('vat', vals.get('vat'), current_departments)
-            if vals.get('phone'):
-                self._validate_duplicate_in_department('phone', vals.get('phone'), current_departments)
-            if vals.get('mobile'):
-                self._validate_duplicate_in_department('mobile', vals.get('mobile'), current_departments)
+        if vals.get('vat'):
+            self._validate_duplicate_in_department('vat', vals.get('vat'), current_departments)
+        if vals.get('phone'):
+            self._validate_duplicate_in_department('phone', vals.get('phone'), current_departments)
+        if vals.get('mobile'):
+            self._validate_duplicate_in_department('mobile', vals.get('mobile'), current_departments)
         return super(ResPartner, self).create(vals)
 
     def write(self, vals):
-        """Bloquear la edición de campos worker, supervisor y department para usuarios worker"""
+        """Bloquear la edición de campos worker, supervisor y department para usuarios worker
+        y aplicar exclusividad entre supervisor y comercial"""
         current_user = self.env.user
-        
+        # 🔥 EXCLUSIÓN PARA ADMINISTRADORES - No aplicar restricciones
+        if current_user._is_admin():
+            return super(ResPartner, self).write(vals)
+        # Exclusividad: Solo puede ser supervisor o comercial, nunca ambos
+        if vals.get('worker') and vals['worker']:
+            vals['supervisor'] = False
+        if vals.get('supervisor') and vals['supervisor']:
+            vals['worker'] = False
         # Si el usuario actual es un worker, verificar que no intente modificar campos restringidos
         if current_user.partner_id and current_user.partner_id.worker:
             restricted_fields = ['worker', 'supervisor', 'department']
             attempted_restricted_fields = [field for field in restricted_fields if field in vals]
-            
             if attempted_restricted_fields:
                 raise ValidationError(
                     f"❌ ACCESO DENEGADO\n\n"
                     f"No tienes permisos para modificar los campos: {', '.join(attempted_restricted_fields)}.\n"
                     f"Solo los administradores y supervisores pueden modificar estos campos."
                 )
-        
         return super(ResPartner, self).write(vals)
 
+
     # -------------------------
-    # 🔒 Filtros de visibilidad
+    # 🔒 Filtros de visibilidad - CON EXCLUSIÓN PARA ADMINISTRADORES
     # -------------------------
     
     @api.model
     def search(self, args, offset=0, limit=None, order=None, count=False):
         current_user = self.env.user
-        if (current_user.partner_id and current_user.partner_id.supervisor and 
-            current_user.partner_id.department):
-            department_users = self.env['res.users'].search([
-                ('partner_id.department', 'in', current_user.partner_id.department.ids)
-            ])
-            department_user_ids = department_users.ids
-            supervisor_filter = [
-                '|',
+        # 🔥 EXCLUSIÓN PARA ADMINISTRADORES - No aplicar filtros
+        if current_user._is_admin():
+            return super(ResPartner, self).search(args, offset, limit, order, count)
+        # Supervisor: solo ve comerciales de su departamento y compañía
+        if (current_user.partner_id and current_user.partner_id.supervisor and
+            current_user.partner_id.department and
+            current_user.partner_id.company_assigned_id):
+            domain_comerciales = [
+                ('worker', '=', True),
                 ('department', 'in', current_user.partner_id.department.ids),
-                ('create_uid', 'in', department_user_ids)
+                ('company_assigned_id', '=', current_user.partner_id.company_assigned_id.id)
             ]
+            partners_ids = super(ResPartner, self).search(domain_comerciales).ids
+            supervisor_filter = [('id', 'in', partners_ids)]
             args = args + supervisor_filter
         elif current_user.partner_id and current_user.partner_id.worker and not current_user.partner_id.supervisor:
             worker_filter = [
@@ -172,17 +205,20 @@ class ResPartner(models.Model):
         if domain is None:
             domain = []
         current_user = self.env.user
-        if (current_user.partner_id and current_user.partner_id.supervisor and 
-            current_user.partner_id.department):
-            department_users = self.env['res.users'].search([
-                ('partner_id.department', 'in', current_user.partner_id.department.ids)
-            ])
-            department_user_ids = department_users.ids
-            supervisor_filter = [
-                '|',
+        # 🔥 EXCLUSIÓN PARA ADMINISTRADORES - No aplicar filtros
+        if current_user._is_admin():
+            return super(ResPartner, self).search_read(domain, fields, offset, limit, order)
+        # Supervisor: solo ve comerciales de su departamento y compañía
+        if (current_user.partner_id and current_user.partner_id.supervisor and
+            current_user.partner_id.department and
+            current_user.partner_id.company_assigned_id):
+            domain_comerciales = [
+                ('worker', '=', True),
                 ('department', 'in', current_user.partner_id.department.ids),
-                ('create_uid', 'in', department_user_ids)
+                ('company_assigned_id', '=', current_user.partner_id.company_assigned_id.id)
             ]
+            partners_ids = super(ResPartner, self).search(domain_comerciales).ids
+            supervisor_filter = [('id', 'in', partners_ids)]
             domain = domain + supervisor_filter
         elif current_user.partner_id and current_user.partner_id.worker and not current_user.partner_id.supervisor:
             worker_filter = [
