@@ -22,6 +22,13 @@
                     groups="base.group_system,base.group_user" />
 
                 <field name="department"
+                    widget="many2many_tags"
+                    options="{'no_create': False}"
+                    attrs="{'invisible': [('is_worker_user', '=', True)]}"
+                    groups="base.group_system,base.group_user" />
+
+                <field name="company_assigned_id"
+                    options="{'no_create': True, 'no_open': True}"
                     attrs="{'invisible': [('is_worker_user', '=', True)]}"
                     groups="base.group_system,base.group_user" />
             </xpath>
@@ -45,24 +52,10 @@
         <field name="inherit_id" ref="base.view_res_partner_filter" />
         <field name="arch" type="xml">
             <search>
-                <!--  Filtro MÉDICO con múltiples opciones  -->
                 <filter string="Departamento Médico" name="filter_medical"
-                    domain="['|','|','|', ('department','ilike','Médico'), ('department','ilike','MEDICO'), ('department','ilike','médico'), ('department','ilike','Medico')]" />
-                <!--  Filtro ESTÉTICA con múltiples opciones  -->
+                    domain="['|','|','|', ('department.name','ilike','Médico'), ('department.name','ilike','MEDICO'), ('department.name','ilike','médico'), ('department.name','ilike','Medico')]" />
                 <filter string="Departamento Estética" name="filter_aesthetic"
-                    domain="['|','|','|', ('department','ilike','Estética'), ('department','ilike','ESTETICA'), ('department','ilike','estética'), ('department','ilike','Estetica')]" />
-                
-                <!-- NUEVOS FILTROS PARA COMERCIAL ASIGNADO -->
-                <!-- <filter string="Mis Clientes" 
-                        name="my_assigned_clients" 
-                        domain="[('assigned_worker_id','=',uid)]"/>
-                <filter string="Sin Comercial" 
-                        name="without_assigned_worker" 
-                        domain="[('assigned_worker_id','=',False)]"/>
-                <separator/>
-                <filter string="Agrupar por Comercial" 
-                        name="group_by_assigned_worker" 
-                        context="{'group_by': 'assigned_worker_id'}"/> -->
+                    domain="['|','|','|', ('department.name','ilike','Estética'), ('department.name','ilike','ESTETICA'), ('department.name','ilike','estética'), ('department.name','ilike','Estetica')]" />
             </search>
         </field>
     </record>
@@ -77,6 +70,7 @@
                 <field name="worker" optional="hide" />
                 <field name="supervisor" optional="hide" />
                 <field name="department" optional="hide" />
+                <field name="company_assigned_id" string="Compañía" optional="show" />
                 <!-- Añadir campo assigned_worker_id en la vista lista -->
                 <!-- <field name="assigned_worker_id" string="Comercial" optional="show" /> -->
             </xpath>
