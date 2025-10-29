@@ -6,7 +6,7 @@
     'category': 'Tools',
     # 'author': 'Nico Mesa',
     # 'website': 'https://github.com/nicomesa230',
-    'depends': ['base', 'product', 'crm'],
+    'depends': ['base', 'product', 'crm', 'custom_partner', 'custom_department'],
     'data': [
         'views/crm_product_menu.xml',
         'views/form_crm_lead.xml',

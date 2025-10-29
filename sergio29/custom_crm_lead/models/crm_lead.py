@@ -48,12 +48,12 @@ class CrmLead(models.Model):
     
     #FILTRO CRM DEPARTAMENTOS 
     
-    @api.depends('user_id', 'user_id.department')
+    @api.depends('user_id', 'user_id.partner_id.department')
     def _compute_commercial_department(self):
-        """Calcula y asigna el departamento del comercial automáticamente"""
         for lead in self:
-            if lead.user_id and lead.user_id.department:
-                lead.commercial_department = lead.user_id.department
+            if lead.user_id and lead.user_id.partner_id and lead.user_id.partner_id.department:
+                dept_names = ', '.join(lead.user_id.partner_id.department.mapped('name'))
+                lead.commercial_department = dept_names
             else:
                 lead.commercial_department = False
     
@@ -68,38 +68,33 @@ class CrmLead(models.Model):
             lead.expected_revenue = total_revenue
     
     def _get_or_create_department_tag(self, department_name, color=1):
-        """Busca o crea una etiqueta para el departamento"""
-        tag_model = self.env['crm.tag']
-        tag = tag_model.search([('name', '=', department_name)], limit=1)
-        
+        # Devuelve la etiqueta como recordset; crea si no existe
+        Tag = self.env['crm.tag']
+        tag = Tag.search([('name', '=', department_name)], limit=1)
         if not tag:
-            tag = tag_model.create({
-                'name': department_name,
-                'color': color
-            })
-        
+            tag = Tag.create({'name': department_name, 'color': color})
         return tag
-    
-    def _assign_department_tag(self):
-        """Asigna etiquetas de departamento basado en el comercial"""
-        for lead in self:
-            # Limpiar etiquetas de departamento existentes
-            department_tags = self.env['crm.tag'].search([
-                ('name', 'in', ['Médico', 'Estética', 'medico', 'estetica'])
-            ])
-            lead.tag_ids = [(3, tag.id) for tag in department_tags]
 
-            # Obtener departamento del comercial asignado
-            dept = (lead.user_id.department or getattr(lead.user_id.partner_id, 'department', False))
-            if dept:
-                dept_lower = dept.lower()
-                if any(word in dept_lower for word in ['médic', 'medic']):
-                    tag = self._get_or_create_department_tag('Médico', 1)
-                    lead.tag_ids = [(4, tag.id)]
-                elif any(word in dept_lower for word in ['estét', 'estet']):
-                    tag = self._get_or_create_department_tag('Estética', 2)
-                    lead.tag_ids = [(4, tag.id)]
-    
+    def _assign_department_tag(self):
+        # Añade etiquetas vía unión de recordsets (evita TypeError)
+        for lead in self:
+            tags_to_add = self.env['crm.tag']
+
+            # Vendedor elegido o usuario actual
+            user = lead.user_id or self.env.user
+            partner = user.partner_id if user else False
+
+            if partner and partner.department:
+                # Nombres de departamentos del partner (Many2many)
+                dept_names = partner.department.mapped('name')
+                for name in dept_names:
+                    tag = self._get_or_create_department_tag(name)
+                    tags_to_add |= tag
+
+            # Une todas las etiquetas en una sola operación
+            if tags_to_add:
+                lead.tag_ids |= tags_to_add
+
     @api.model
     def create(self, vals):
         """Al crear lead, asignar departamento y etiqueta automáticamente"""
@@ -179,61 +174,32 @@ class CrmLead(models.Model):
         """Filtrar leads/oportunidades según jerarquía: Admin > Supervisor > Trabajador"""
         current_user = self.env.user
         
-        # Debug: Log para verificar qué está pasando
-        _logger.info(f"CRM search called by user: {current_user.name}")
-        _logger.info(f"User is admin: {current_user.has_group('base.group_system')}")
-        _logger.info(f"User partner supervisor: {current_user.partner_id.supervisor if current_user.partner_id else 'No partner'}")
-        _logger.info(f"User partner worker: {current_user.partner_id.worker if current_user.partner_id else 'No partner'}")
-        _logger.info(f"User department: {current_user.partner_id.department if current_user.partner_id else 'No partner'}")
-        
         # Si el usuario NO es administrador, aplicar filtros según rol
         if not current_user.has_group('base.group_system') and current_user.partner_id:
-            
-            # Si es supervisor, puede ver leads de su departamento Y leads asignados a él
             if current_user.partner_id.supervisor and current_user.partner_id.department:
                 _logger.info("Applying supervisor filter")
-                # Buscar todos los usuarios trabajadores del mismo departamento
+                # Obtener los IDs de los departamentos
+                department_ids = current_user.partner_id.department.ids
+                
                 department_partners = self.env['res.partner'].search([
-                    ('department', '=', current_user.partner_id.department),
+                    ('department', 'in', department_ids),  # Usar IDs aquí
                     ('worker', '=', True)
                 ])
-                
-                # Obtener los user_ids de estos partners
                 department_user_ids = []
                 for partner in department_partners:
                     user = self.env['res.users'].search([('partner_id', '=', partner.id)], limit=1)
                     if user:
                         department_user_ids.append(user.id)
-                
-                # Incluir al supervisor también
                 department_user_ids.append(current_user.id)
-                
-                # FILTRO CORREGIDO: Supervisor puede ver:
-                # 1. Leads de su departamento (creados por cualquier usuario del depto)
-                # 2. Leads asignados a él (user_id = supervisor)
-                # 3. Leads que él creó (create_uid = supervisor)
                 supervisor_filter = [
                     '|', '|',
-                    ('create_uid', 'in', department_user_ids),  # Leads del departamento
-                    ('user_id', '=', current_user.id),  # Leads asignados al supervisor
-                    ('create_uid', '=', current_user.id)  # Leads que el supervisor creó
+                    ('create_uid', 'in', department_user_ids),
+                    ('user_id', '=', current_user.id),
+                    ('create_uid', '=', current_user.id)
                 ]
                 if args is None:
                     args = []
                 args = args + supervisor_filter
-                _logger.info(f"Supervisor filter - department users: {department_user_ids}")
-            
-            # Si es trabajador (pero no supervisor), puede ver sus leads Y leads asignados a él
-            elif current_user.partner_id.worker:
-                _logger.info("Applying worker filter - own leads AND assigned leads")
-                worker_filter = [
-                    '|',  # Cambiado a OR para incluir ambas condiciones
-                    ('create_uid', '=', current_user.id),  # Leads que él creó
-                    ('user_id', '=', current_user.id)  # Leads asignados a él
-                ]
-                if args is None:
-                    args = []
-                args = args + worker_filter
         
         return super(CrmLead, self).search(args, offset, limit, order, count)
 
@@ -244,12 +210,11 @@ class CrmLead(models.Model):
         
         # Si el usuario NO es administrador, aplicar filtros según rol
         if not current_user.has_group('base.group_system') and current_user.partner_id:
-            
-            # Si es supervisor, puede ver leads de su departamento Y leads asignados a él
             if current_user.partner_id.supervisor and current_user.partner_id.department:
+                _logger.info("Applying supervisor filter")
                 # Buscar todos los usuarios trabajadores del mismo departamento
                 department_partners = self.env['res.partner'].search([
-                    ('department', '=', current_user.partner_id.department),
+                    ('department', 'in', current_user.partner_id.department.ids),  # <-- corregido
                     ('worker', '=', True)
                 ])
                 
@@ -279,6 +244,7 @@ class CrmLead(models.Model):
             
             # Si es trabajador (pero no supervisor), puede ver sus leads Y leads asignados a él
             elif current_user.partner_id.worker:
+                _logger.info("Applying worker filter - own leads AND assigned leads")
                 worker_filter = [
                     '|',  # Cambiado a OR para incluir ambas condiciones
                     ('create_uid', '=', current_user.id),  # Leads que él creó
@@ -313,7 +279,7 @@ class ResPartner(models.Model):
                 _logger.info("Applying supervisor contact filter")
                 supervisor_filter = [
                     '|',
-                    ('department', '=', current_user.partner_id.department),  # Su departamento
+                    ('department', 'in', current_user.partner_id.department.ids),  # <-- corregido
                     '&',
                     ('create_uid', '=', current_user.id),  # Contactos que él creó
                     ('worker', '=', False)  # Solo clientes, no trabajadores
@@ -342,13 +308,11 @@ class ResPartner(models.Model):
         
         # Si el usuario actual tiene un rol específico, aplicar filtro
         if current_user.partner_id:
-            
-            # Si es supervisor, puede ver contactos de su departamento
             if current_user.partner_id.supervisor and current_user.partner_id.department:
                 supervisor_filter = [
                     '|',
-                    ('department', '=', current_user.partner_id.department),  # Su departamento
-                    ('create_uid', '=', current_user.id)  # Contactos que él creó
+                    ('department', 'in', current_user.partner_id.department.ids),  # <-- corregido
+                    ('create_uid', '=', current_user.id)
                 ]
                 if args is None:
                     args = []

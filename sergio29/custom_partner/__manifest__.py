@@ -4,9 +4,7 @@
     'summary': 'Extends partner for a many2many tags products',
     'description': 'Extends partner for a many2many tags products',
     'category': 'Tools',
-    'author': 'Nico Mesa',
-    'website': 'https://github.com/nicomesa230',
-    'depends': ['base', 'product'],
+    'depends': ['base', 'product', 'custom_department'],
     'data': [
         'security/ir.model.access.csv',
         'views/customer_partner.xml',

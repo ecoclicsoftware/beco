@@ -1,2 +1,0 @@
-# beco
-becomedical
