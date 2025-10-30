@@ -1,0 +1,133 @@
+<odoo>
+    <!-- ===================================================== -->
+    <!-- 1️⃣ Herencia de la vista FORMULARIO PRINCIPAL -->
+    <!-- ===================================================== -->
+    <record id="view_crm_lead_form_inherit_readonly" model="ir.ui.view">
+        <field name="name">crm.lead.form.inherit.readonly</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Quitar el campo lead_properties -->
+            <xpath expr="//field[@name='lead_properties']" position="replace">
+            </xpath>
+
+            <!-- Añadir el campo product_ids después del campo tag_ids -->
+            <xpath expr="//field[@name='tag_ids']" position="after">
+                <field name="product_ids" 
+                    widget="many2many_tags" 
+                    options="{'no_create': True, 'no_create_edit': True}"/>
+            </xpath>
+
+            <!-- Forzar readonly en los campos email_from y phone -->
+            <xpath expr="//field[@name='email_from']" position="attributes">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+            <xpath expr="//field[@name='phone']" position="attributes">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+            <xpath expr="//field[@name='tag_ids']" position="attributes">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_crm_lead_kanban_inherit_products" model="ir.ui.view">
+        <field name="name">crm.lead.kanban.inherit.products</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
+        <field name="arch" type="xml">
+            <!-- Insertamos el campo product_ids dentro del cuerpo principal del kanban -->
+            <xpath expr="//div[contains(@class, 'oe_kanban_content')]" position="inside">
+                <div class="mt8">
+                    <field name="product_ids"
+                        widget="many2many_tags"
+                        options="{'no_create': True, 'no_create_edit': True}"
+                        placeholder="Añadir productos..."/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ===================================================== -->
+    <!-- 2️⃣ Herencia de la vista QUICK CREATE (popup rápido) -->
+    <!-- ===================================================== -->
+    <!-- <record id="view_crm_lead_form_quick_create_inherit_readonly" model="ir.ui.view">
+        <field name="name">crm.lead.form.quick.create.inherit.readonly</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form_quick_create"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='email_from']" position="attributes">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+            <xpath expr="//field[@name='phone']" position="attributes">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+        </field>
+    </record> -->
+
+    <!-- ===================================================== -->
+    <!-- 3️⃣ Herencia de la vista KANBAN (tarjetas del flujo) -->
+    <!-- ===================================================== -->
+    <!-- <record id="view_crm_lead_kanban_inherit_readonly" model="ir.ui.view">
+        <field name="name">crm.lead.kanban.inherit.readonly</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[hasclass('oe_kanban_content')]" position="inside">
+                <div class="o_kanban_text_primary mt-1">
+                    <t t-if="record.email_from.value">
+                        <i class="fa fa-envelope me-1"/>
+                        <span t-esc="record.email_from.value"/>
+                    </t>
+                    <t t-if="record.phone.value">
+                        <i class="fa fa-phone me-1 ms-2"/>
+                        <span t-esc="record.phone.value"/>
+                    </t>
+                </div>
+            </xpath>
+        </field>
+    </record> -->
+
+    <!-- ===================================================== -->
+    <!-- 4️⃣ Herencia de la vista KANBAN FORM (popup del kanban) -->
+    <!-- ===================================================== -->
+    <!-- <record id="view_crm_lead_kanban_form_inherit_readonly" model="ir.ui.view">
+        <field name="name">crm.lead.kanban.form.inherit.readonly</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_form_view_leads"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='opportunity_partner']//field[@name='partner_id']" position="after">
+                <field name="email_from" widget="email" readonly="1"
+                    attrs="{'invisible': [('type','=','lead')]}"/>
+                <field name="phone" widget="phone" readonly="1"
+                    attrs="{'invisible': [('type','=','lead')]}"/>
+            </xpath>
+
+            <xpath expr="//field[@name='email_from']" position="attributes">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+            <xpath expr="//field[@name='phone']" position="attributes">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+        </field>
+    </record> -->
+
+    <!-- ===================================================== -->
+    <!-- 5️⃣ Herencia del POPUP DE KANBAN (vista oculta en Odoo16) -->
+    <!-- ===================================================== -->
+    <!-- <record id="view_crm_lead_kanban_popup_inherit_readonly" model="ir.ui.view">
+        <field name="name">crm.lead.kanban.popup.inherit.readonly</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_kanban_popup"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='email_from']" position="attributes" t-if="record.email_from.value">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+            <xpath expr="//field[@name='phone']" position="attributes" t-if="record.phone.value">
+                <attribute name="readonly">1</attribute>
+            </xpath>
+        </field>
+    </record> -->
+
+</odoo>
