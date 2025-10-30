@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- VISTA DE FORMULARIO -->
+    <record id="view_form_customer_custom" model="ir.ui.view">
+        <field name="name">res.partner.form.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form" />
+        <field name="arch" type="xml">
+            <!-- Roles después de VAT -->
+            <xpath expr="//field[@name='vat']" position="after">
+                <field name="is_worker_user" invisible="1" />
+                <field name="is_external_user" invisible="1" />
+
+                <field name="worker" widget="boolean_toggle" class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user','=',True)]}" />
+                <field name="supervisor" widget="boolean_toggle" class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user','=',True)]}" />
+                <field name="external" widget="boolean_toggle" class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user','=',True)]}" />
+
+                <!-- Insertamos aquí el nuevo campo many2many para supervisores asignados -->
+                <field name="supervisores_ids" widget="many2many_tags"
+                    attrs="{'invisible':[('external','=',False)]}"
+                    domain="[('supervisor','=',True)]"
+                    options="{'no_create': True}"
+                    string="Supervisores asignados" />
+            </xpath>
+
+            <!-- Asignación Supervisor Externo para Comerciales -->
+            <xpath expr="//page[@name='sales_purchases']" position="inside">
+                <group string="Supervisor Externo" attrs="{'invisible':[('worker','=',False)]}">
+                    <field name="supervisor_externo_id"
+                        domain="[('external','=',True)]"
+                        options="{'no_create': True}" />
+                </group>
+
+
+                <!-- Campo para asignar comerciales (editable) -->
+                <group string="Asignar Comerciales">
+                    <field name="comerciales_asignados_ids"
+                        widget="many2many_tags"
+                        domain="[('worker','=',True)]"
+                        context="{'default_worker': True}"
+                        options="{'no_create': True}"
+                        string="Seleccionar Comerciales" />
+                </group>
+                <!-- Tabla de visualización (solo lectura) -->
+                <group string="Comerciales Asignados (Vista Detallada)">
+                    <field name="comerciales_asignados_ids"
+                        mode="tree"
+                        readonly="1">
+                        <tree string="Comerciales Asignados" create="false" edit="false"
+                            delete="false">
+                            <field name="name" string="Nombre" readonly="1" />
+                            <field name="email" string="Email" readonly="1" />
+                            <field name="phone" string="Teléfono" readonly="1" />
+                            <field name="mobile" string="Móvil" readonly="1" />
+                            <field name="department" string="Departamentos"
+                                widget="many2many_tags" readonly="1" />
+                            <field name="company_id" string="Compañía" readonly="1" />
+                            <field name="street" string="Dirección" readonly="1" />
+                            <field name="city" string="Ciudad" readonly="1" />
+                        </tree>
+                    </field>
+                </group>
+            </xpath>
+
+            <!-- Departamento para TODOS los roles excepto externo -->
+            <xpath expr="//field[@name='category_id']" position="after">
+                <field name="department" widget="many2many_tags"/>
+            </xpath>
+
+        </field>
+    </record>
+
+    <!-- VISTA DE ÁRBOL -->
+    <record id="view_tree_customer_custom" model="ir.ui.view">
+        <field name="name">res.partner.tree.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='display_name']" position="after">
+                <field name="worker" />
+                <field name="supervisor" />
+                <field name="external" />
+                <field name="supervisor_externo_id" />
+                <field name="internal_company_id" />
+                
+            </xpath>
+            
+        </field>
+    </record>
+
+
+    <!-- VISTA DE BÚSQUEDA -->
+    <!-- <record id="view_search_customer_custom" model="ir.ui.view">
+        <field name="name">res.partner.search.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='my_company']" position="after">
+                <filter string="Comercial" name="worker" domain="[('worker','=',True)]"/>
+                <filter string="Supervisor" name="supervisor" domain="[('supervisor','=',True)]"/>
+                <filter string="Externo" name="external" domain="[('external','=',True)]"/>
+                <filter string="Supervisor Externo" domain="[('supervisor_externo_id','!=',False)]"/>
+            </xpath>
+        </field>
+    </record> -->
+
+    <!-- VISTA KANBAN -->
+    <record id="view_partner_kanban_custom" model="ir.ui.view">
+        <field name="name">res.partner.kanban.custom</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <kanban>
+                <field name="name"/>
+                <field name="worker"/>
+                <field name="supervisor"/>
+                <field name="external"/>
+                <field name="department"/>
+                <field name="supervisor_externo_id"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_global_click">
+                            <div class="o_kanban_record_body">
+                                <strong><field name="name"/></strong>
+                                <div>
+                                    <field name="worker" widget="boolean_toggle" class="oe_inline" attrs="{'invisible': [('worker', '=', False)]}"/>
+                                    <field name="supervisor" widget="boolean_toggle" class="oe_inline" attrs="{'invisible': [('supervisor', '=', False)]}"/>
+                                    <field name="external" widget="boolean_toggle" class="oe_inline" attrs="{'invisible': [('external', '=', False)]}"/>
+                                </div>
+                                <div t-if="record.department.raw_value" class="text-muted">
+                                    <small>
+                                        <field name="department" widget="many2many_tags" options="{'no_create': True}"/>
+                                    </small>
+                                </div>
+                                <div t-if="record.supervisor_externo_id.raw_value" class="text-info">
+                                    <small>
+                                        <i class="fa fa-user me-1"/>
+                                        <field name="supervisor_externo_id" widget="many2one_avatar" options="{'no_create': True}"/>
+                                    </small>
+                                </div>
+                                <div t-if="record.comerciales_asignados_ids.raw_value and record.external.raw_value" class="text-success">
+                                    <small>
+                                        <span>Comerciales: <field name="comerciales_asignados_ids"/></span>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- ACCIÓN Y MENÚ -->
+    <record id="action_res_partner_custom" model="ir.actions.act_window">
+        <field name="name">Contactos Personalizados</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">tree,form,kanban</field>
+        <field name="view_id" ref="view_tree_customer_custom"/>
+        <!-- <field name="search_view_id" ref="view_search_customer_custom"/> -->
+    </record>
+</odoo>
