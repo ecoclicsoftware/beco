@@ -40,7 +40,7 @@ class ResPartner(models.Model):
         'externo_id', 
         'comercial_id',
         string='Comerciales Asignados',
-        domain="[('worker', '=', True)]",
+        # domain="[('worker', '=', True)]",
         help='Comerciales asignados a este supervisor externo'
     )
 
@@ -79,17 +79,6 @@ class ResPartner(models.Model):
         help='Compañía de Odoo asignada a este contacto',
         store=True
     )
-    
-    # ---------------------------------
-    # Individual default_get override
-    # ---------------------------------
-    
-    @api.model
-    def default_get(self, fields_list):
-        """Forzar company_type a 'person' por defecto"""
-        res = super(ResPartner, self).default_get(fields_list)
-        res['company_type'] = 'person'
-        return res
 
 
     # -------------------------
@@ -112,25 +101,9 @@ class ResPartner(models.Model):
     
     @api.constrains('external', 'supervisores_ids')
     def _check_supervisor_externo_obligatorio(self):
-        """Validar que el externo tenga supervisores solo al confirmar guardado"""
         for rec in self:
-            # NO validar si estamos en contexto de onchange o sin ID persistente
-            if not rec.id:
-                continue
-                
-            # Solo validar en registros external que YA FUERON guardados al menos una vez y que el usuario está intentando guardar cambios definitivos
             if rec.external and not rec.supervisores_ids:
-                # Comprobar si este es un guardado real y no un cambio temporal
-                if rec._origin.external == rec.external:
-                    # El registro ya era externo antes, permitir edición temporal
-                    continue
-                else:
-                    # Es un cambio nuevo a externo, validar
-                    raise ValidationError(
-                        "⚠️ Debes asignar al menos un supervisor antes de guardar este contacto externo."
-                    )
-
-
+                raise ValidationError("Debes asignar al menos un supervisor a este supervisor externo.")
             
             
     @api.constrains('external', 'comerciales_asignados_ids')
@@ -205,99 +178,31 @@ class ResPartner(models.Model):
     # ONCHANGE METHODS
     # -------------------------
 
-    @api.onchange('worker')
-    def _onchange_worker(self):
-        if self.worker:
-            self.supervisor = False
-            self.external = False
-            self.department = False
-            self.supervisor_externo_id = False
+    # @api.onchange('worker')
+    # def _onchange_worker(self):
+    #     if self.worker:
+    #         self.supervisor = False
+    #         self.external = False
+    #         self.department = False
+    #         self.supervisor_externo_id = False
 
-    @api.onchange('supervisor')
-    def _onchange_supervisor(self):
-        if self.supervisor:
-            self.worker = False
-            self.external = False
-            self.department = False
-            self.supervisor_externo_id = False
+    # @api.onchange('supervisor')
+    # def _onchange_supervisor(self):
+    #     if self.supervisor:
+    #         self.worker = False
+    #         self.external = False
+    #         self.department = False
+    #         self.supervisor_externo_id = False
 
-    @api.onchange('external')
-    def _onchange_external(self):
-        if self.external:
-            self.worker = False
-            self.supervisor = False
-            self.department = False
-            self.company_id = False
-        else:
-            self.comerciales_asignados_ids = [(5, 0, 0)]  # Limpiar comerciales asignados si deja de ser externo
-    
-    
-    @api.onchange('parent_id')
-    def _onchange_parent_id(self):
-        """
-        Onchange que se ejecuta ANTES del warning estándar.
-        Prepara el valor de internal_company_id para que se guarde cuando se acepte el warning.
-        """
-        if self.parent_id:
-            parent = self.parent_id
-            
-            # Intentar obtener la compañía del parent
-            company_to_assign = False
-            
-            # Opción 1: Si parent es una compañía (type='company'), usar su company_id
-            if parent.is_company and parent.company_id:
-                company_to_assign = parent.company_id
-                _logger.info(f"✅ Onchange: Parent es compañía, usando company_id: {company_to_assign.name}")
-            
-            # Opción 2: Si parent tiene internal_company_id custom
-            elif hasattr(parent, 'internal_company_id') and parent.internal_company_id:
-                company_to_assign = parent.internal_company_id
-                _logger.info(f"✅ Onchange: Parent tiene internal_company_id: {company_to_assign.name}")
-            
-            # Opción 3: Si parent tiene company_id estándar
-            elif parent.company_id:
-                company_to_assign = parent.company_id
-                _logger.info(f"✅ Onchange: Parent tiene company_id estándar: {company_to_assign.name}")
-            
-            # Opción 4: Si el parent tiene un parent a su vez (es un contacto de una compañía)
-            elif parent.parent_id:
-                # Recursivamente buscar la compañía en el parent del parent
-                grandparent = parent.parent_id
-                if grandparent.is_company and grandparent.company_id:
-                    company_to_assign = grandparent.company_id
-                    _logger.info(f"✅ Onchange: Usando compañía del grandparent: {company_to_assign.name}")
-                elif grandparent.company_id:
-                    company_to_assign = grandparent.company_id
-                    _logger.info(f"✅ Onchange: Usando company_id del grandparent: {company_to_assign.name}")
-            
-            # Opción 5: Buscar en todas las compañías permitidas del usuario
-            if not company_to_assign:
-                user_companies = self.env.user.company_ids
-                if user_companies:
-                    # Intentar encontrar la compañía que coincida con el nombre del parent
-                    matching_company = user_companies.filtered(
-                        lambda c: parent.name and c.name.lower() in parent.name.lower()
-                    )
-                    if matching_company:
-                        company_to_assign = matching_company[0]
-                        _logger.info(f"✅ Onchange: Usando compañía por coincidencia de nombre: {company_to_assign.name}")
-                    else:
-                        # Usar la primera compañía permitida al usuario que no sea la default
-                        other_companies = user_companies - self.env.company
-                        if other_companies:
-                            company_to_assign = other_companies[0]
-                            _logger.info(f"✅ Onchange: Usando primera compañía disponible: {company_to_assign.name}")
-                        else:
-                            company_to_assign = self.env.company
-                            _logger.warning(f"⚠️ Onchange: Usando compañía por defecto del usuario: {company_to_assign.name}")
-            
-            self.internal_company_id = company_to_assign
-            
-        else:
-            self.internal_company_id = False
-            _logger.info("🧹 Onchange: Parent_id limpiado, limpiando internal_company_id")
-        
-
+    # @api.onchange('external')
+    # def _onchange_external(self):
+    #     if self.external:
+    #         self.worker = False
+    #         self.supervisor = False
+    #         self.department = False
+    #         self.company_id = False
+    #     else:
+    #         self.comerciales_asignados_ids = [(5, 0, 0)]  # Limpiar comerciales asignados si deja de ser externo
 
     # -------------------------
     # COMPUTED METHODS
@@ -391,6 +296,20 @@ class ResPartner(models.Model):
                     self._validate_duplicate_in_department('phone', record.phone, record.department, record.id)
                 if record.mobile:
                     self._validate_duplicate_in_department('mobile', record.mobile, record.department, record.id)
+    
+    
+    # -------------------------
+    # DEBUGGING METHODS
+    # -------------------------
+    
+    @api.model
+    def fields_get(self, allfields=None, attributes=None):
+        """Override para debuggear qué campos se están enviando"""
+        result = super(ResPartner, self).fields_get(allfields, attributes)
+        _logger.info(f"🔍 FIELDS_GET llamado")
+        return result
+
+
 
     # -------------------------
     # CRUD METHODS
@@ -398,11 +317,43 @@ class ResPartner(models.Model):
 
     @api.model
     def create(self, vals):
+        _logger.info(f"🎯 CREATE llamado con vals: {vals}")
         current_user = self.env.user
         
-        # Validar exclusividad de roles
+        # -------------------------
+        # DEBUG: ¿QUIÉN ESTÁ LOGUEADO?
+        # -------------------------
+        _logger.info(f"═══════════════════════════════════════")
+        _logger.info(f"👤 Usuario actual (res.users):")
+        _logger.info(f"   - ID: {current_user.id}")
+        _logger.info(f"   - Login: {current_user.login}")
+        _logger.info(f"   - Name: {current_user.name}")
+        _logger.info(f"   - Partner ID: {current_user.partner_id.id if current_user.partner_id else 'None'}")
+        _logger.info(f"   - Partner Name: {current_user.partner_id.name if current_user.partner_id else 'None'}")
+        
+        if current_user.partner_id:
+            # Forzar lectura desde BD sin caché
+            partner = self.env['res.partner'].sudo().browse(current_user.partner_id.id)
+            
+            _logger.info(f"📋 Datos del Partner asociado (desde BD):")
+            _logger.info(f"   - ID: {partner.id}")
+            _logger.info(f"   - Name: {partner.name}")
+            _logger.info(f"   - worker: {partner.worker}")
+            _logger.info(f"   - supervisor: {partner.supervisor}")
+            _logger.info(f"   - external: {partner.external}")
+            _logger.info(f"   - internal_company_id: {partner.internal_company_id.name if partner.internal_company_id else 'None'}")
+            _logger.info(f"   - department IDs: {partner.department.ids}")
+            _logger.info(f"   - department Names: {partner.department.mapped('name')}")
+        else:
+            _logger.info(f"⚠️ El usuario NO tiene partner_id asociado")
+        _logger.info(f"═══════════════════════════════════════")
+        
+        # -------------------------
+        # VALIDACIÓN DE ROLES
+        # -------------------------
         role_fields = ['worker', 'supervisor', 'external']
         active_roles = [field for field in role_fields if vals.get(field)]
+        
         if len(active_roles) > 1:
             raise ValidationError("Solo puede seleccionar un rol a la vez.")
         
@@ -427,178 +378,235 @@ class ResPartner(models.Model):
                 'company_id': False,
             })
         
-        # Asignar compañía por defecto si no especificada, excepto para externos
+        # -------------------------
+        # ASIGNACIÓN DE COMPANY_ID POR DEFECTO
+        # -------------------------
         if not vals.get('external') and not vals.get('company_id'):
             vals['company_id'] = current_user.company_id.id
-
-        # Lógica para SUPERVISOR creando un COMERCIAL
+        
+        # -------------------------
+        # LÓGICA SEGÚN ROL DEL CREADOR
+        # -------------------------
+        
+        # SUPERVISOR creando COMERCIAL
         if current_user.partner_id.supervisor and vals.get('worker'):
             if not vals.get('department'):
                 if current_user.partner_id.department:
-                    # Asigna los departamentos del supervisor al nuevo comercial
                     vals['department'] = [(6, 0, current_user.partner_id.department.ids)]
                 else:
-                    raise ValidationError("No puedes crear un comercial porque, como supervisor, no tienes un departamento asignado.")
-
-        # Lógica para COMERCIAL creando un CONTACTO (sin rol)
+                    raise ValidationError(
+                        "No puedes crear un comercial porque, como supervisor, "
+                        "no tienes un departamento asignado."
+                    )
+        
+        # COMERCIAL creando CONTACTO
         elif current_user.partner_id.worker:
-            # Un comercial no puede crear otros usuarios con roles
+            # Un comercial NO puede crear usuarios con roles
             if vals.get('worker') or vals.get('supervisor') or vals.get('external'):
-                raise ValidationError("No tienes permisos para crear usuarios con roles (Comercial, Supervisor, Externo).")
-            # Asigna su propio departamento al nuevo contacto si no se especifica uno
+                raise ValidationError(
+                    "No tienes permisos para crear usuarios con roles "
+                    "(Comercial, Supervisor, Externo)."
+                )
+            
+            # Asignar departamento del comercial al nuevo contacto si no se especifica
             if current_user.partner_id.department and not vals.get('department'):
                 vals['department'] = [(6, 0, current_user.partner_id.department.ids)]
         
-        # Validar duplicados (mantenemos tu lógica)
+        # -------------------------
+        # HERENCIA AUTOMÁTICA DE EMPRESA Y DEPARTAMENTOS
+        # -------------------------
+        if current_user.partner_id:
+            # Forzar lectura desde BD sin caché
+            creator_partner = self.env['res.partner'].sudo().browse(current_user.partner_id.id)
+            
+            _logger.info(f"🔄 Aplicando herencia automática...")
+            _logger.info(f"   - Valores actuales en vals:")
+            _logger.info(f"     * internal_company_id: {vals.get('internal_company_id')}")
+            _logger.info(f"     * department: {vals.get('department')}")
+            
+            # Heredar internal_company_id si no se especificó O está vacío
+            if not vals.get('internal_company_id') and creator_partner.internal_company_id:
+                vals['internal_company_id'] = creator_partner.internal_company_id.id
+                _logger.info(
+                    f"✅ Heredando empresa '{creator_partner.internal_company_id.name}' "
+                    f"(ID: {creator_partner.internal_company_id.id}) al nuevo contacto"
+                )
+            else:
+                if vals.get('internal_company_id'):
+                    _logger.info(f"ℹ️ internal_company_id ya tiene valor: {vals.get('internal_company_id')}")
+                elif not creator_partner.internal_company_id:
+                    _logger.warning(f"⚠️ El creador NO tiene empresa asignada")
+            
+            # Heredar department si no se especificó O está vacío y el creador no es externo
+            # Verificar si department está vacío: None, False, [], o [[6, False, []]]
+            department_empty = (
+                not vals.get('department') or 
+                vals.get('department') == [[6, False, []]] or
+                vals.get('department') == [(6, 0, [])]
+            )
+            
+            _logger.info(f"   - department_empty: {department_empty}")
+            
+            if department_empty and creator_partner.department and not vals.get('external'):
+                vals['department'] = [(6, 0, creator_partner.department.ids)]
+                _logger.info(
+                    f"✅ Heredando departamentos {creator_partner.department.mapped('name')} "
+                    f"(IDs: {creator_partner.department.ids}) al nuevo contacto"
+                )
+            else:
+                if not department_empty:
+                    _logger.info(f"ℹ️ department ya tiene valor: {vals.get('department')}")
+                elif not creator_partner.department:
+                    _logger.warning(f"⚠️ El creador NO tiene departamentos asignados")
+                elif vals.get('external'):
+                    _logger.info(f"ℹ️ El nuevo contacto es externo (no hereda departamentos)")
+
+        
+        # -------------------------
+        # VALIDACIÓN DE DUPLICADOS
+        # -------------------------
         duplicate_fields = ['vat', 'phone', 'mobile']
         for field in duplicate_fields:
             if vals.get(field):
-                self._validate_duplicate_in_department(field, vals.get(field), vals.get('department', False))
-
+                self._validate_duplicate_in_department(field, vals.get(field), vals.get('department'), False)
+        
+        _logger.info(f"📦 Valores FINALES antes de crear: {vals}")
         return super(ResPartner, self).create(vals)
 
 
+
+
+
     def write(self, vals):
-        """
-        Sobrescribir write para:
-        1. FORZAR sincronización parent_id -> internal_company_id SIEMPRE
-        2. Gestionar cambios de roles
-        3. Sincronización bidireccional de relaciones
-        """
+        current_user = self.env.user
+        _logger.info(f"✏️ EJECUTANDO WRITE para {self.mapped('name')}")
+        _logger.info(f"📦 Valores a escribir: {vals}")
         
-        # ============================================================
-        # SINCRONIZACIÓN AGRESIVA parent_id -> internal_company_id
-        # ============================================================
-        if 'parent_id' in vals:
-            parent_id = vals.get('parent_id')
+        # Log del estado actual antes de escribir
+        for record in self:
+            _logger.info(f"📊 Estado actual ANTES de {record.name}:")
+            _logger.info(f"   - ID: {record.id}")
+            _logger.info(f"   - worker: {record.worker}")
+            _logger.info(f"   - supervisor: {record.supervisor}")  
+            _logger.info(f"   - external: {record.external}")
+            _logger.info(f"   - comerciales_asignados_ids: {record.comerciales_asignados_ids.ids}")
+            _logger.info(f"   - comerciales_asignados_names: {record.comerciales_asignados_ids.mapped('name')}")
+            _logger.info(f"   - supervisores_ids: {record.supervisores_ids.ids}")
+            _logger.info(f"   - department: {record.department.ids}")
+            _logger.info(f"   - company_id: {record.company_id.id}")
+        
+        # Si estamos intentando asignar comerciales, log específico
+        if 'comerciales_asignados_ids' in vals:
+            _logger.info(f"🎯 INTENTANDO ASIGNAR COMERCIALES: {vals['comerciales_asignados_ids']}")
+        
+        # Si el usuario actual es comercial, bloquear edición de campos restringidos
+        if current_user.partner_id and current_user.partner_id.worker:
+            restricted_fields = ['worker', 'supervisor', 'department', 'external', 'supervisor_externo_id', 'supervisores_ids', 'comerciales_asignados_ids']
+            attempted_restricted_fields = [field for field in restricted_fields if field in vals]
+            if attempted_restricted_fields:
+                _logger.error(f"🚫 ACCESO DENEGADO: Comercial intentando modificar {attempted_restricted_fields}")
+                raise ValidationError(
+                    f"❌ ACCESO DENEGADO\n\n"
+                    f"No tienes permisos para modificar los campos: {', '.join(attempted_restricted_fields)}.\n"
+                    f"Solo los administradores y supervisores pueden modificar estos campos."
+                )
+        
+        # Exclusividad de roles al editar - usar approach diferente
+        records_to_clear = self.env['res.partner']
+        
+        for record in self:
+            # Si se está cambiando a worker
+            if vals.get('worker') and not record.worker:
+                _logger.info(f"🔄 {record.name} cambiando a WORKER")
+                records_to_clear += record
             
-            _logger.info(f"🔍 WRITE: Detectado cambio en parent_id: {parent_id}")
+            # Si se está cambiando a supervisor  
+            elif vals.get('supervisor') and not record.supervisor:
+                _logger.info(f"🔄 {record.name} cambiando a SUPERVISOR")
+                records_to_clear += record
+                
+            # Si se está cambiando a external
+            elif vals.get('external') and not record.external:
+                _logger.info(f"🔄 {record.name} cambiando a EXTERNAL")
+                records_to_clear += record
+        
+        if records_to_clear:
+            _logger.info(f"🚨 REGISTROS QUE CAMBIAN DE ROL: {records_to_clear.mapped('name')}")
+        
+        # Aplicar cambios de roles en una sola operación para evitar problemas de caché
+        if records_to_clear:
+            # Primero limpiar relaciones para los registros que cambian de rol
+            clear_vals = {}
             
-            if parent_id:
-                # Buscar el parent con sudo() para asegurar acceso
-                parent = self.env['res.partner'].sudo().browse(parent_id)
+            if vals.get('worker'):
+                clear_vals.update({
+                    'supervisor': False,
+                    'external': False,
+                    'supervisores_ids': [(5, 0, 0)],
+                    'comerciales_asignados_ids': [(5, 0, 0)],
+                })
+                _logger.info(f"🔄 Limpiando campos para cambio a WORKER: {clear_vals}")
+            elif vals.get('supervisor'):
+                clear_vals.update({
+                    'worker': False,
+                    'external': False,
+                    'supervisor_externo_id': False,
+                    'comerciales_asignados_ids': [(5, 0, 0)],
+                })
+                _logger.info(f"🔄 Limpiando campos para cambio a SUPERVISOR: {clear_vals}")
+            elif vals.get('external'):
+                clear_vals.update({
+                    'worker': False,
+                    'supervisor': False,
+                    'department': [(5, 0, 0)],
+                    'company_id': False,
+                    'supervisor_externo_id': False,
+                })
+                _logger.info(f"🔄 Limpiando campos para cambio a EXTERNAL: {clear_vals}")
+            
+            # Aplicar limpieza primero
+            if clear_vals:
+                # Hacer una copia de vals sin los campos de rol para evitar conflictos
+                temp_vals = vals.copy()
+                role_fields = ['worker', 'supervisor', 'external']
+                for field in role_fields:
+                    if field in temp_vals:
+                        del temp_vals[field]
                 
-                # Intentar múltiples fuentes para obtener la compañía
-                company_to_assign = False
+                _logger.info(f"🔄 Aplicando limpieza primero con: {clear_vals}")
+                # Primero aplicar la limpieza
+                records_to_clear.write(clear_vals)
                 
-                # Opción 1: Si parent es una compañía (type='company'), usar su company_id
-                if parent.is_company and parent.company_id:
-                    company_to_assign = parent.company_id.id
-                    _logger.info(f"✅ Parent es compañía, usando company_id: {company_to_assign}")
+                # Luego aplicar el resto de valores
+                if temp_vals:
+                    _logger.info(f"🔄 Aplicando valores temporales: {temp_vals}")
+                    super(ResPartner, records_to_clear).write(temp_vals)
                 
-                # Opción 2: Si parent tiene internal_company_id custom
-                elif hasattr(parent, 'internal_company_id') and parent.internal_company_id:
-                    company_to_assign = parent.internal_company_id.id
-                    _logger.info(f"✅ Parent tiene internal_company_id: {company_to_assign}")
+                # Finalmente aplicar el cambio de rol
+                role_vals = {k: v for k, v in vals.items() if k in role_fields}
+                if role_vals:
+                    _logger.info(f"🔄 Aplicando cambio de rol final: {role_vals}")
+                    super(ResPartner, records_to_clear).write(role_vals)
                 
-                # Opción 3: Si parent tiene company_id estándar
-                elif parent.company_id:
-                    company_to_assign = parent.company_id.id
-                    _logger.info(f"✅ Parent tiene company_id estándar: {company_to_assign}")
-                
-                # Opción 4: Buscar en las compañías permitidas del usuario
-                else:
-                    user_companies = self.env.user.company_ids
-                    if user_companies:
-                        # Intentar encontrar la compañía que coincida con el nombre del parent
-                        matching_company = user_companies.filtered(
-                            lambda c: parent.name and c.name.lower() in parent.name.lower()
-                        )
-                        if matching_company:
-                            company_to_assign = matching_company[0].id
-                            _logger.info(f"✅ Write: Usando compañía por coincidencia de nombre: {company_to_assign}")
-                        else:
-                            # Usar la primera compañía permitida al usuario que no sea la default
-                            other_companies = user_companies - self.env.company
-                            if other_companies:
-                                company_to_assign = other_companies[0].id
-                                _logger.info(f"✅ Write: Usando primera compañía disponible: {company_to_assign}")
-                            else:
-                                company_to_assign = self.env.company.id
-                                _logger.warning(f"⚠️ Write: Usando compañía por defecto del usuario: {company_to_assign}")
-                    else:
-                        company_to_assign = self.env.company.id
-                        _logger.warning(f"⚠️ Write: Usando compañía por defecto del usuario: {company_to_assign}")
-                
-                # FORZAR la asignación en vals
-                vals['internal_company_id'] = company_to_assign
-                _logger.info(f"🎯 FORZANDO internal_company_id en vals: {company_to_assign}")
-                
-            else:
-                # Si se limpia parent_id, limpiar también internal_company_id
-                vals['internal_company_id'] = False
-                _logger.info("🧹 Parent_id limpiado, limpiando internal_company_id")
+                _logger.info("✅ PROCESO DE CAMBIO DE ROL COMPLETADO")
+                return True
         
-        # ============================================================
-        # LÓGICA DE ROLES (tu código existente)
-        # ============================================================
-        if 'worker' in vals and not vals['worker']:
-            vals['supervisor_externo_id'] = False
-            for record in self:
-                if record.supervisor_externo_id:
-                    externo = record.supervisor_externo_id
-                    if record in externo.comerciales_asignados_ids:
-                        externo.write({'comerciales_asignados_ids': [(3, record.id)]})
-        
-        if 'supervisor' in vals and not vals['supervisor']:
-            vals['department'] = [(5, 0, 0)]
-        
-        if 'external' in vals and not vals['external']:
-            vals['supervisores_ids'] = [(5, 0, 0)]
-            vals['comerciales_asignados_ids'] = [(5, 0, 0)]
-        
-        # ============================================================
-        # EJECUTAR WRITE ORIGINAL
-        # ============================================================
+        # Para registros que no cambian de rol, escribir normalmente
+        _logger.info("🔄 Ejecutando WRITE normal (sin cambio de rol)")
         result = super(ResPartner, self).write(vals)
         
-        # ============================================================
-        # POST-WRITE: VERIFICACIÓN Y CORRECCIÓN FORZADA
-        # ============================================================
-        # Si había parent_id en vals, verificar que se haya aplicado correctamente
-        # ESTA PARTE ES REDUNDANTE Y PUEDE CAUSAR PROBLEMAS - ELIMINAR O COMENTAR
-        # if 'parent_id' in vals and vals.get('internal_company_id'):
-        #     for record in self:
-        #         if record.internal_company_id.id != vals['internal_company_id']:
-        #             # Si no se aplicó correctamente, forzar con UPDATE directo a BD
-        #             _logger.error(f"❌ internal_company_id no se aplicó correctamente, forzando con SQL...")
-        #             self.env.cr.execute("""
-        #                 UPDATE res_partner 
-        #                 SET internal_company_id = %s 
-        #                 WHERE id = %s
-        #             """, (vals['internal_company_id'], record.id))
-        #             self.env.cr.commit()
-        #             _logger.info(f"✅ Forzado por SQL: partner {record.id} -> company {vals['internal_company_id']}")
+        # Log del estado DESPUÉS de escribir
+        for record in self:
+            _logger.info(f"📊 Estado actual DESPUÉS de {record.name}:")
+            _logger.info(f"   - worker: {record.worker}")
+            _logger.info(f"   - supervisor: {record.supervisor}")  
+            _logger.info(f"   - external: {record.external}")
+            _logger.info(f"   - comerciales_asignados_ids: {record.comerciales_asignados_ids.ids}")
+            _logger.info(f"   - comerciales_asignados_names: {record.comerciales_asignados_ids.mapped('name')}")
+            _logger.info(f"   - supervisores_ids: {record.supervisores_ids.ids}")
+            _logger.info(f"   - department: {record.department.ids}")
         
-        # ============================================================
-        # SINCRONIZACIÓN BIDIRECCIONAL (tu código existente)
-        # ============================================================
-        if 'supervisor_externo_id' in vals:
-            for record in self:
-                if record.supervisor_externo_id:
-                    externo = record.supervisor_externo_id
-                    if record not in externo.comerciales_asignados_ids:
-                        externo.write({'comerciales_asignados_ids': [(4, record.id)]})
-                
-                if record._origin.supervisor_externo_id and \
-                record._origin.supervisor_externo_id != record.supervisor_externo_id:
-                    old_externo = record._origin.supervisor_externo_id
-                    if record in old_externo.comerciales_asignados_ids:
-                        old_externo.write({'comerciales_asignados_ids': [(3, record.id)]})
-        
-        if 'comerciales_asignados_ids' in vals:
-            for record in self:
-                if record.external:
-                    for comercial in record.comerciales_asignados_ids:
-                        if comercial.supervisor_externo_id != record:
-                            comercial.write({'supervisor_externo_id': record.id})
-                    
-                    if record._origin.comerciales_asignados_ids:
-                        removed_comerciales = record._origin.comerciales_asignados_ids - record.comerciales_asignados_ids
-                        for comercial in removed_comerciales:
-                            if comercial.supervisor_externo_id == record:
-                                comercial.write({'supervisor_externo_id': False})
-        
+        _logger.info(f"✅ WRITE COMPLETADO para {self.mapped('name')}")
         return result
 
 
@@ -609,33 +617,67 @@ class ResPartner(models.Model):
     @api.model
     def search(self, args, offset=0, limit=None, order=None, count=False):
         current_user = self.env.user
+        
         if self.env.is_admin():
             return super().search(args, offset, limit, order, count)
+        
         if current_user.partner_id and current_user.partner_id.supervisor:
+            # Obtener IDs de comerciales de los departamentos del supervisor
+            comerciales_ids = self.env['res.partner'].sudo().search([
+                ('worker', '=', True),
+                ('department', 'in', current_user.partner_id.department.ids),
+                ('internal_company_id', '=', current_user.partner_id.internal_company_id.id)
+            ]).ids
+            
+            # Obtener IDs de clientes (contactos sin rol) creados por esos comerciales
+            clientes_ids = self.env['res.partner'].sudo().search([
+                ('worker', '=', False),
+                ('supervisor', '=', False),
+                ('external', '=', False),
+                ('create_uid.partner_id', 'in', comerciales_ids),
+                ('internal_company_id', '=', current_user.partner_id.internal_company_id.id)
+            ]).ids
+            
             supervisor_domain = [
-                '|',  # (A) O (B)
-                    ('id', '=', current_user.partner_id.id),  # A: Sí mismo
-                '|',  # (B) O (C)
-                    '&',  # B: Comerciales de sus departamentos
-                        ('worker', '=', True),
-                        ('department', 'in', current_user.partner_id.department.ids),
-                    '&',  # C: Externos asignados
-                        ('external', '=', True),
-                        ('supervisores_ids', 'in', [current_user.partner_id.id]),
+                '|', '|', '|', '|',  # 5 condiciones principales con 4 operadores OR
+                ('id', '=', current_user.partner_id.id),  # 1. Sí mismo
+                '&', '&',  # 2. Comerciales de sus departamentos Y misma empresa
+                    ('worker', '=', True),
+                    ('department', 'in', current_user.partner_id.department.ids),
+                    ('internal_company_id', '=', current_user.partner_id.internal_company_id.id),
+                '&',  # 3. Externos asignados
+                    ('external', '=', True),
+                    ('supervisores_ids', 'in', [current_user.partner_id.id]),
+                '&', '&', '&',  # 4. Contactos sin rol creados por sus comerciales
+                    ('worker', '=', False),
+                    ('supervisor', '=', False),
+                    ('external', '=', False),
+                    ('id', 'in', clientes_ids),
+                '&',  # 5. Contactos creados por externos asignados
+                    ('create_uid.partner_id.external', '=', True),
+                    ('create_uid.partner_id.supervisores_ids', 'in', [current_user.partner_id.id])
             ]
+            
             return super().search(args + supervisor_domain, offset, limit, order, count)
+        
         elif current_user.partner_id and current_user.partner_id.external:
-            # Externo puede verse a sí mismo Y sus comerciales asignados (ahora con Many2many)
+            # Externo puede verse a sí mismo Y sus comerciales asignados
             external_domain = [
                 '|',
-                    ('id', '=', current_user.partner_id.id),
-                    ('id', 'in', current_user.partner_id.comerciales_asignados_ids.ids)
+                ('id', '=', current_user.partner_id.id),
+                ('id', 'in', current_user.partner_id.comerciales_asignados_ids.ids)
             ]
             return super().search(args + external_domain, offset, limit, order, count)
+        
         elif current_user.partner_id and current_user.partner_id.worker:
-            # Comercial puede verse a sí mismo 
-            worker_domain = [('id', '=', current_user.partner_id.id)]
+            # Comercial puede verse a sí mismo Y los contactos que él creó
+            worker_domain = [
+                '|',
+                ('id', '=', current_user.partner_id.id),
+                ('create_uid', '=', current_user.id)
+            ]
             return super().search(args + worker_domain, offset, limit, order, count)
+        
         else:
             return super().search(args + [('id', '=', current_user.partner_id.id)], offset, limit, order, count)
 
@@ -643,39 +685,68 @@ class ResPartner(models.Model):
     def search_read(self, domain=None, fields=None, offset=0, limit=None, order=None):
         if domain is None:
             domain = []
+        
         current_user = self.env.user
+        
         if self.env.is_admin():
             return super().search_read(domain, fields, offset, limit, order)
+        
         if current_user.partner_id and current_user.partner_id.supervisor:
+            # Obtener IDs de comerciales de los departamentos del supervisor
+            comerciales_ids = self.env['res.partner'].sudo().search([
+                ('worker', '=', True),
+                ('department', 'in', current_user.partner_id.department.ids),
+                ('internal_company_id', '=', current_user.partner_id.internal_company_id.id)
+            ]).ids
+            
+            # Obtener IDs de clientes (contactos sin rol) creados por esos comerciales
+            clientes_ids = self.env['res.partner'].sudo().search([
+                ('worker', '=', False),
+                ('supervisor', '=', False),
+                ('external', '=', False),
+                ('create_uid.partner_id', 'in', comerciales_ids),
+                ('internal_company_id', '=', current_user.partner_id.internal_company_id.id)
+            ]).ids
+            
             supervisor_domain = [
-                '|',  # (A) O (B)
-                    ('id', '=', current_user.partner_id.id),  # A: Sí mismo
-                '|',  # (B) O (C)
-                    '&',  # B: Comerciales de sus departamentos
-                        ('worker', '=', True),
-                        ('department', 'in', current_user.partner_id.department.ids),
-                    '&',  # C: Externos asignados
-                        ('external', '=', True),
-                        ('supervisores_ids', 'in', [current_user.partner_id.id]),
+                '|', '|', '|', '|',  # 5 condiciones principales con 4 operadores OR
+                ('id', '=', current_user.partner_id.id),  # 1. Sí mismo
+                '&', '&',  # 2. Comerciales de sus departamentos Y misma empresa
+                    ('worker', '=', True),
+                    ('department', 'in', current_user.partner_id.department.ids),
+                    ('internal_company_id', '=', current_user.partner_id.internal_company_id.id),
+                '&',  # 3. Externos asignados
+                    ('external', '=', True),
+                    ('supervisores_ids', 'in', [current_user.partner_id.id]),
+                '&', '&', '&',  # 4. Contactos sin rol creados por sus comerciales
+                    ('worker', '=', False),
+                    ('supervisor', '=', False),
+                    ('external', '=', False),
+                    ('id', 'in', clientes_ids),
+                '&',  # 5. Contactos creados por externos asignados
+                    ('create_uid.partner_id.external', '=', True),
+                    ('create_uid.partner_id.supervisores_ids', 'in', [current_user.partner_id.id])
             ]
+            
             return super().search_read(domain + supervisor_domain, fields, offset, limit, order)
+        
         elif current_user.partner_id and current_user.partner_id.external:
             # Externo puede verse a sí mismo Y sus comerciales asignados
             external_domain = [
                 '|',
-                    ('id', '=', current_user.partner_id.id),
-                    ('id', 'in', current_user.partner_id.comerciales_asignados_ids.ids)
+                ('id', '=', current_user.partner_id.id),
+                ('id', 'in', current_user.partner_id.comerciales_asignados_ids.ids)
             ]
             return super().search_read(domain + external_domain, fields, offset, limit, order)
+        
         elif current_user.partner_id and current_user.partner_id.worker:
-            # Comercial puede verse a sí mismo Y otros comerciales con mismo supervisor externo
+            # Comercial puede verse a sí mismo Y los contactos que él creó
             worker_domain = [
                 '|',
-                    ('id', '=', current_user.partner_id.id),
-                    '&',
-                        ('worker', '=', True),
-                        ('supervisor_externo_id', '=', current_user.partner_id.supervisor_externo_id.id)
+                ('id', '=', current_user.partner_id.id),
+                ('create_uid', '=', current_user.id)
             ]
             return super().search_read(domain + worker_domain, fields, offset, limit, order)
+        
         else:
             return super().search_read(domain + [('id', '=', current_user.partner_id.id)], fields, offset, limit, order)
