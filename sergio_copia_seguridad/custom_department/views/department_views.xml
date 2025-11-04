@@ -1,0 +1,39 @@
+<odoo>
+    <!-- Acción y menú de primer nivel (sin parent para evitar XMLID inexistente) -->
+    <record id="action_res_partner_department" model="ir.actions.act_window">
+        <field name="name">Departamentos</field>
+        <field name="res_model">res.partner.department</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="menu_res_partner_department_root"
+              name="Departamentos"
+              action="action_res_partner_department"
+              sequence="50"/>
+
+    <record id="view_res_partner_department_tree" model="ir.ui.view">
+        <field name="name">res.partner.department.tree</field>
+        <field name="model">res.partner.department</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+                <field name="active"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_res_partner_department_form" model="ir.ui.view">
+        <field name="name">res.partner.department.form</field>
+        <field name="model">res.partner.department</field>
+        <field name="arch" type="xml">
+            <form string="Departamento">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="active"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>
