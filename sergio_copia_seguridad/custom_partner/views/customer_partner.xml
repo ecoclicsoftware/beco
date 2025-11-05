@@ -66,6 +66,14 @@
                 <field name="internal_company_id" />
             </xpath>
 
+            <!-- Agregar campo comercial_asignado_id después de internal_company_id -->
+            <xpath expr="//field[@name='internal_company_id']" position="after">
+                <field name="comercial_asignado_id"
+                    attrs="{'invisible': ['|', '|', ('worker', '=', True), ('supervisor', '=', True), ('external', '=', True)]}"
+                    options="{'no_create': True, 'no_open': True}" />
+            </xpath>
+
+
         </field>
     </record>
 

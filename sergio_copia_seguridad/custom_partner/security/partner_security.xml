@@ -1,21 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="1">
-        <!-- Regla para trabajadores comentada temporalmente -->
-        <!-- 
-        <record id="partner_worker_rule" model="ir.rule">
-            <field name="name">Trabajador: Solo contactos creados por él</field>
-            <field name="model_id" ref="base.model_res_partner"/>
-            <field name="domain_force">[
-                '|',
-                ('created_by_worker', '=', user.partner_id.id),
-                ('id', '=', user.partner_id.id)
-            ]</field>
-            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
-            <field name="perm_read" eval="True"/>
-            <field name="perm_write" eval="True"/>
-            <field name="perm_create" eval="True"/>
-            <field name="perm_unlink" eval="False"/>
-        </record>
-        -->
-    </data>
+      
+    <!-- <record id="res_partner_rule_worker" model="ir.rule">
+        <field name="name">Comercial: Ver clientes asignados</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="domain_force">[
+            '|',
+            ('id', '=', user.partner_id.id),
+            ('comercial_asignado_id', '=', user.partner_id.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+    
+    <record id="res_partner_rule_supervisor" model="ir.rule">
+        <field name="name">Supervisor: Ver departamento y empresa</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="domain_force">[
+            '|', '|', '|',
+            ('id', '=', user.partner_id.id),
+            '&amp;', ('department', 'in', user.partner_id.department.ids), ('internal_company_id', '=', user.partner_id.internal_company_id.id),
+            ('supervisores_ids', 'in', [user.partner_id.id]),
+            ('comercial_asignado_id.supervisor_externo_id', '=', user.partner_id.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="False"/>
+    </record> -->
+    
 </odoo>

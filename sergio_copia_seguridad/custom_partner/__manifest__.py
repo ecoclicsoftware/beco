@@ -7,6 +7,7 @@
     'depends': ['base', 'product', 'custom_department', 'calendar'],
     'data': [
         'security/ir.model.access.csv',
+        'security/partner_security.xml',
         'views/customer_partner.xml',
     ],
     'license': 'LGPL-3',
