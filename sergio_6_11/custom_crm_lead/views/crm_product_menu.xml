@@ -1,0 +1,17 @@
+<odoo>
+    <!-- Acción para abrir productos -->
+    <record id="action_crm_products" model="ir.actions.act_window">
+        <field name="name">Products</field>
+        <field name="res_model">product.product</field>
+        <field name="view_mode">tree,form</field>
+        <field name="domain">[]</field>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- Menú hijo de CRM -->
+    <menuitem id="menu_crm_products"
+              name="Productos"
+              parent="crm.crm_menu_root"
+              action="action_crm_products"
+              sequence="20"/>
+</odoo>

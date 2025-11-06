@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="crm_lead_search_department_filters" model="ir.ui.view">
+        <field name="name">crm.lead.search.department.filters</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
+        <field name="arch" type="xml">
+
+            <!-- Insertamos los filtros personalizados -->
+            <xpath expr="//search" position="inside">
+                
+                <!-- Filtro por etiqueta Médico -->
+                <filter string="Oportunidades Médicas"
+                        name="filter_medical"
+                        domain="[('tag_ids.name', 'ilike', 'Médico')]"/>
+
+                <!-- Filtro por etiqueta Estética -->
+                <filter string="Oportunidades Estética"
+                        name="filter_aesthetic"
+                        domain="[('tag_ids.name', 'ilike', 'Estética')]"/>
+
+            </xpath>
+        </field>
+    </record>
+</odoo>
