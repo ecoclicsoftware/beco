@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- VISTA DE FORMULARIO -->
+    <record id="view_form_customer_custom" model="ir.ui.view">
+        <field name="name">res.partner.form.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form" />
+        <field name="arch" type="xml">
+
+            <!-- Ocultar el campo company_id estándar -->
+            <xpath expr="//field[@name='company_id']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+
+            <!-- Ocultar el campo company_ids (compañías asociadas) -->
+            <xpath expr="//field[@name='parent_id']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+
+            <!-- Ocultar selector de tipo de contacto y forzar valores por defecto -->
+            <xpath expr="//field[@name='company_type']" position="attributes">
+                <attribute name="invisible">1</attribute>
+                <attribute name="force_save">1</attribute>
+            </xpath>
+
+            <!-- Forzar is_company a False -->
+            <xpath expr="//field[@name='is_company']" position="attributes">
+                <attribute name="invisible">1</attribute>
+                <attribute name="force_save">1</attribute>
+            </xpath>
+
+            <!-- Desactivar warning de cambio de company en parent_id -->
+            <xpath expr="//field[@name='parent_id']" position="attributes">
+                <attribute name="options">{'no_quick_create': True}</attribute>
+                <attribute name="context">{'skip_company_change_warning': True}</attribute>
+            </xpath>
+
+            <!-- Roles después de VAT -->
+            <xpath expr="//field[@name='vat']" position="after">
+                <field name="is_worker_user" invisible="1" />
+                <field name="is_external_user" invisible="1" />
+
+                <field name="worker" widget="boolean_toggle" class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user','=',True)]}" />
+                <field name="supervisor" widget="boolean_toggle" class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user','=',True)]}" />
+                <field name="external" widget="boolean_toggle" class="oe_inline"
+                    attrs="{'invisible': [('is_worker_user','=',True)]}" />
+
+                <!-- Insertamos aquí el nuevo campo many2many para supervisores asignados -->
+                <field name="supervisores_ids" widget="many2many_tags"
+                    attrs="{'invisible':[('external','=',False)]}"
+                    domain="[('supervisor','=',True)]"
+                    options="{'no_create': True}"
+                    string="Supervisores asignados" />
+
+                <field name="comerciales_asignados_ids" widget="many2many_tags"
+                    attrs="{'invisible':[('external','=',False)]}"
+                    domain="[('worker','=',True), ('department','in',department), ('internal_company_id','=',internal_company_id)]"
+                    context="{'default_worker': True}"
+                    options="{'no_create': True}"
+                    string="Seleccionar Comerciales" />
+            </xpath>
+
+            <!-- Asignación Supervisor Externo para Comerciales -->
+            <xpath expr="//page[@name='sales_purchases']" position="inside">
+                <group string="Supervisor Externo" attrs="{'invisible':[('worker','=',False)]}">
+                    <field name="supervisor_externo_id"
+                        domain="[('external','=',True)]"
+                        options="{'no_create': True}" />
+                </group>
+            </xpath>
+
+            <!-- Departamento para TODOS los roles excepto externo -->
+            <xpath expr="//field[@name='category_id']" position="after">
+                <field name="department" widget="many2many_tags" />
+                <field name="internal_company_id" />
+            </xpath>
+
+            <!-- Agregar campo comercial_asignado_id después de internal_company_id -->
+            <xpath expr="//field[@name='internal_company_id']" position="after">
+                <field name="comercial_asignado_id"
+                    attrs="{'invisible': ['|', '|', ('worker', '=', True), ('supervisor', '=', True), ('external', '=', True)]}"
+                    options="{'no_create': True, 'no_open': True}" />
+            </xpath>
+
+        </field>
+    </record>
+
+    <!-- VISTA DE ÁRBOL -->
+    <record id="view_tree_customer_custom" model="ir.ui.view">
+        <field name="name">res.partner.tree.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='display_name']" position="after">
+                <field name="worker" />
+                <field name="supervisor" />
+                <field name="external" />
+                <field name="supervisor_externo_id" />
+                <field name="department" />
+                <field name="internal_company_id" />
+            </xpath>
+        </field>
+    </record>
+
+    <!-- VISTA KANBAN -->
+    <record id="view_partner_kanban_custom" model="ir.ui.view">
+        <field name="name">res.partner.kanban.custom</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.res_partner_kanban_view" />
+        <field name="arch" type="xml">
+            <!-- Cambiar el xpath para que coincida con la estructura actual de Odoo 16 -->
+            <xpath expr="//div[hasclass('oe_kanban_details')]" position="inside">
+                <div t-if="record.department.raw_value" class="mb-1">
+                    <span class="text-primary small">
+                        <i class="fa fa-building me-1" /> Departamentos </span>
+                    <div class="ms-3">
+                        <field name="department" widget="many2many_tags"
+                            options="{'no_create': True, 'size': 'small'}" />
+                    </div>
+                </div>
+                <div t-if="record.internal_company_id.raw_value" class="mb-1">
+                    <span class="text-success small">
+                        <i class="fa fa-industry me-1" /> Compañía </span>
+                    <div class="ms-3">
+                        <field name="internal_company_id"
+                            options="{'no_create': True, 'no_open': True}" />
+                    </div>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+
+    <!-- ACCIÓN Y MENÚ -->
+    <record id="action_res_partner_custom" model="ir.actions.act_window">
+        <field name="name">Contactos Personalizados</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">kanban,tree,form</field>
+        <field name="view_id" ref="view_partner_kanban_custom"/>
+    </record>
+</odoo>
