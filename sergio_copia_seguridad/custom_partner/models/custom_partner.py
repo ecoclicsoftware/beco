@@ -537,9 +537,6 @@ class ResPartner(models.Model):
 
 
 
-
-
-
     def write(self, vals):
         current_user = self.env.user
         _logger.info(f"✏️ EJECUTANDO WRITE para {self.mapped('name')}")
@@ -552,15 +549,17 @@ class ResPartner(models.Model):
             _logger.info(f"   - worker: {record.worker}")
             _logger.info(f"   - supervisor: {record.supervisor}")  
             _logger.info(f"   - external: {record.external}")
+            _logger.info(f"   - comercial_asignado_id: {record.comercial_asignado_id.id if record.comercial_asignado_id else 'VACÍO'}")
             _logger.info(f"   - comerciales_asignados_ids: {record.comerciales_asignados_ids.ids}")
-            _logger.info(f"   - comerciales_asignados_names: {record.comerciales_asignados_ids.mapped('name')}")
             _logger.info(f"   - supervisores_ids: {record.supervisores_ids.ids}")
             _logger.info(f"   - department: {record.department.ids}")
-            _logger.info(f"   - company_id: {record.company_id.id}")
         
         # Si estamos intentando asignar comerciales, log específico
         if 'comerciales_asignados_ids' in vals:
             _logger.info(f"🎯 INTENTANDO ASIGNAR COMERCIALES: {vals['comerciales_asignados_ids']}")
+        
+        if 'comercial_asignado_id' in vals:
+            _logger.info(f"🎯 INTENTANDO ASIGNAR COMERCIAL: {vals['comercial_asignado_id']}")
         
         # Si el usuario actual es comercial, bloquear edición de campos restringidos
         if current_user.partner_id and current_user.partner_id.worker:
@@ -574,56 +573,56 @@ class ResPartner(models.Model):
                     f"Solo los administradores y supervisores pueden modificar estos campos."
                 )
         
-        # Exclusividad de roles al editar - usar approach diferente
+        # Detectar cambios de rol REALES (de False a True)
         records_to_clear = self.env['res.partner']
         
         for record in self:
-            # Si se está cambiando a worker
-            if vals.get('worker') and not record.worker:
-                _logger.info(f"🔄 {record.name} cambiando a WORKER")
+            # SOLO limpiar si hay un cambio REAL de rol (de False a True)
+            if vals.get('worker') == True and not record.worker:
+                _logger.info(f"🔄 {record.name} cambiando a WORKER (era False, ahora True)")
                 records_to_clear += record
             
-            # Si se está cambiando a supervisor  
-            elif vals.get('supervisor') and not record.supervisor:
-                _logger.info(f"🔄 {record.name} cambiando a SUPERVISOR")
+            elif vals.get('supervisor') == True and not record.supervisor:
+                _logger.info(f"🔄 {record.name} cambiando a SUPERVISOR (era False, ahora True)")
                 records_to_clear += record
                 
-            # Si se está cambiando a external
-            elif vals.get('external') and not record.external:
-                _logger.info(f"🔄 {record.name} cambiando a EXTERNAL")
+            elif vals.get('external') == True and not record.external:
+                _logger.info(f"🔄 {record.name} cambiando a EXTERNAL (era False, ahora True)")
                 records_to_clear += record
         
         if records_to_clear:
             _logger.info(f"🚨 REGISTROS QUE CAMBIAN DE ROL: {records_to_clear.mapped('name')}")
         
-        # Aplicar cambios de roles en una sola operación para evitar problemas de caché
+        # Solo aplicar limpieza si HAY registros que realmente cambian de rol
         if records_to_clear:
-            # Primero limpiar relaciones para los registros que cambian de rol
             clear_vals = {}
             
-            if vals.get('worker'):
+            if vals.get('worker') == True:
                 clear_vals.update({
                     'supervisor': False,
                     'external': False,
                     'supervisores_ids': [(5, 0, 0)],
                     'comerciales_asignados_ids': [(5, 0, 0)],
+                    'comercial_asignado_id': False,  # Limpiar comercial asignado al cambiar a worker
                 })
                 _logger.info(f"🔄 Limpiando campos para cambio a WORKER: {clear_vals}")
-            elif vals.get('supervisor'):
+            elif vals.get('supervisor') == True:
                 clear_vals.update({
                     'worker': False,
                     'external': False,
                     'supervisor_externo_id': False,
                     'comerciales_asignados_ids': [(5, 0, 0)],
+                    'comercial_asignado_id': False,  # Limpiar comercial asignado al cambiar a supervisor
                 })
                 _logger.info(f"🔄 Limpiando campos para cambio a SUPERVISOR: {clear_vals}")
-            elif vals.get('external'):
+            elif vals.get('external') == True:
                 clear_vals.update({
                     'worker': False,
                     'supervisor': False,
                     'department': [(5, 0, 0)],
                     'company_id': False,
                     'supervisor_externo_id': False,
+                    'comercial_asignado_id': False,  # Limpiar comercial asignado al cambiar a external
                 })
                 _logger.info(f"🔄 Limpiando campos para cambio a EXTERNAL: {clear_vals}")
             
@@ -638,7 +637,7 @@ class ResPartner(models.Model):
                 
                 _logger.info(f"🔄 Aplicando limpieza primero con: {clear_vals}")
                 # Primero aplicar la limpieza
-                records_to_clear.write(clear_vals)
+                super(ResPartner, records_to_clear).write(clear_vals)
                 
                 # Luego aplicar el resto de valores
                 if temp_vals:
@@ -652,25 +651,58 @@ class ResPartner(models.Model):
                     super(ResPartner, records_to_clear).write(role_vals)
                 
                 _logger.info("✅ PROCESO DE CAMBIO DE ROL COMPLETADO")
+                
+                # Si hay registros restantes que NO cambiaron de rol, escribirles normalmente
+                remaining_records = self - records_to_clear
+                if remaining_records:
+                    _logger.info(f"🔄 Escribiendo registros restantes sin cambio de rol: {remaining_records.mapped('name')}")
+                    super(ResPartner, remaining_records).write(vals)
+                
+                # Log del estado DESPUÉS
+                for record in self:
+                    _logger.info(f"📊 Estado actual DESPUÉS de {record.name}:")
+                    _logger.info(f"   - worker: {record.worker}")
+                    _logger.info(f"   - supervisor: {record.supervisor}")  
+                    _logger.info(f"   - external: {record.external}")
+                    _logger.info(f"   - comercial_asignado_id: {record.comercial_asignado_id.id if record.comercial_asignado_id else 'VACÍO'}")
+                    _logger.info(f"   - comerciales_asignados_ids: {record.comerciales_asignados_ids.ids}")
+                    _logger.info(f"   - supervisores_ids: {record.supervisores_ids.ids}")
+                
+                _logger.info(f"✅ WRITE COMPLETADO para {self.mapped('name')}")
                 return True
         
-        # Para registros que no cambian de rol, escribir normalmente
+        # Para registros que NO cambian de rol, escribir normalmente
         _logger.info("🔄 Ejecutando WRITE normal (sin cambio de rol)")
         result = super(ResPartner, self).write(vals)
         
-        # Log del estado DESPUÉS de escribir
+        # 🆕 DEBUG: Verificar si el campo se guardó realmente
+        self.env.cr.flush()  # Forzar flush a la base de datos
+        for record in self:
+            # Leer directamente de la base de datos
+            self.env.cr.execute("""
+                SELECT id, name, comercial_asignado_id 
+                FROM res_partner 
+                WHERE id = %s
+            """, (record.id,))
+            db_row = self.env.cr.fetchone()
+            _logger.info(f"🔍 VERIFICACIÓN EN BD para {record.name} (ID {record.id}):")
+            _logger.info(f"   - En caché ORM: comercial_asignado_id = {record.comercial_asignado_id.id if record.comercial_asignado_id else 'NULL'}")
+            _logger.info(f"   - En BD PostgreSQL: comercial_asignado_id = {db_row[2] if db_row else 'NO ENCONTRADO'}")
+
+        # Log del estado DESPUÉS
         for record in self:
             _logger.info(f"📊 Estado actual DESPUÉS de {record.name}:")
             _logger.info(f"   - worker: {record.worker}")
             _logger.info(f"   - supervisor: {record.supervisor}")  
             _logger.info(f"   - external: {record.external}")
+            _logger.info(f"   - comercial_asignado_id: {record.comercial_asignado_id.id if record.comercial_asignado_id else 'VACÍO'}")
             _logger.info(f"   - comerciales_asignados_ids: {record.comerciales_asignados_ids.ids}")
-            _logger.info(f"   - comerciales_asignados_names: {record.comerciales_asignados_ids.mapped('name')}")
             _logger.info(f"   - supervisores_ids: {record.supervisores_ids.ids}")
             _logger.info(f"   - department: {record.department.ids}")
-        
+
         _logger.info(f"✅ WRITE COMPLETADO para {self.mapped('name')}")
         return result
+
 
 
     # -------------------------
@@ -681,140 +713,143 @@ class ResPartner(models.Model):
     def search(self, args, offset=0, limit=None, order=None, count=False):
         """
         Filtros personalizados de visibilidad por rol.
-        Usa sudo() para bypassear las reglas de seguridad de Odoo.
         """
         current_user = self.env.user
         
-        _logger.info(f"🔍 SEARCH llamado por usuario: {current_user.name} (ID: {current_user.id})")
-        _logger.info(f"   - Partner ID: {current_user.partner_id.id if current_user.partner_id else 'None'}")
-        _logger.info(f"   - Es admin: {self.env.is_admin()}")
+        # IMPORTANTE: Verificar si ya estamos en un contexto de bypass
+        if self.env.context.get('skip_custom_search'):
+            _logger.info(f"🔓 Bypass activado - búsqueda sin restricciones")
+            # Llamar directamente al método search de la clase padre (BaseModel)
+            return super(ResPartner, self).search(args, offset=offset, limit=limit, order=order, count=count)
+
+        
+        _logger.info(f"===== SEARCH llamado por usuario {current_user.name} (ID {current_user.id}) =====")
+        _logger.info(f"- Partner ID: {current_user.partner_id.id if current_user.partner_id else None}")
         
         # Admin ve todo
-        if self.env.is_admin():
-            _logger.info(f"✅ Es admin - Sin restricciones")
+        if self.env.user._is_admin():
+            _logger.info("Es admin REAL - Sin restricciones")
             return super(ResPartner, self).search(args, offset, limit, order, count)
-        
+
         if not current_user.partner_id:
-            _logger.warning(f"⚠️ Usuario sin partner_id asociado")
-            return super(ResPartner, self.sudo()).search([('id', '=', False)], offset, limit, order, count)
-        
+            _logger.warning(f"Usuario sin partner_id asociado")
+            return super(ResPartner, self).search(args + [('id', '=', False)], offset, limit, order, count)
+
         partner = current_user.partner_id
-        _logger.info(f"   - Roles: worker={partner.worker}, supervisor={partner.supervisor}, external={partner.external}")
-        
+        _logger.info(f"- Roles: worker={partner.worker}, supervisor={partner.supervisor}, external={partner.external}")
+
+        # COMERCIAL
+        if partner.worker:
+            _logger.info(f"COMERCIAL search - Usuario {partner.name} (ID {partner.id})")
+            
+            # 🆕 LIMPIAR args que restringen por ID
+            # Remover cualquier restricción de ID que venga de record rules
+            clean_args = []
+            for item in args:
+                # Saltar restricciones de ID que vienen de afuera
+                if isinstance(item, tuple) and len(item) == 3:
+                    field, operator, value = item
+                    if field == 'id' and operator == 'in':
+                        _logger.info(f"🚫 Ignorando restricción externa: {item}")
+                        continue  # Saltar esta restricción
+                clean_args.append(item)
+            
+            worker_domain = [
+                '|',
+                ('id', '=', partner.id),
+                ('comercial_asignado_id', '=', partner.id)
+            ]
+            
+            _logger.info(f"Args originales: {args}")
+            _logger.info(f"Args limpiados: {clean_args}")
+            _logger.info(f"Worker domain: {worker_domain}")
+            _logger.info(f"Dominio final: {clean_args + worker_domain}")
+            
+            # Llamar a super() con args limpiados y sudo para bypassear record rules
+            result = super(ResPartner, self.sudo()).search(clean_args + worker_domain, offset=offset, limit=limit, order=order, count=count)
+            
+            _logger.info(f"Resultado comercial: {result if count else len(result)} registros")
+            if not count:
+                _logger.info(f"- IDs encontrados: {result.ids}")
+            return result
+
+
         # SUPERVISOR
         if partner.supervisor:
-            _logger.info(f"🔍 SUPERVISOR search - Usuario: {partner.name}")
-            _logger.info(f"   - Departamentos: {partner.department.mapped('name')} (IDs: {partner.department.ids})")
-            _logger.info(f"   - Empresa: {partner.internal_company_id.name if partner.internal_company_id else 'None'}")
-            
-            # Obtener IDs de comerciales
-            comerciales_ids = self.env['res.partner'].sudo().search([
+            _logger.info(f"SUPERVISOR search - Usuario {partner.name}")
+            _logger.info(f"- Departamentos: {partner.department.mapped('name')} (IDs {partner.department.ids})")
+            _logger.info(f"- Empresa: {partner.internal_company_id.name if partner.internal_company_id else None}")
+
+            # Obtener IDs de comerciales (CON CONTEXTO SKIP)
+            comerciales_ids = self.env['res.partner'].with_context(skip_custom_search=True).sudo().search([
                 ('worker', '=', True),
                 ('department', 'in', partner.department.ids),
                 ('internal_company_id', '=', partner.internal_company_id.id)
             ]).ids
-            
-            _logger.info(f"   - Comerciales encontrados: {len(comerciales_ids)} - IDs: {comerciales_ids}")
-            
-            # Obtener IDs de clientes creados por comerciales
-            clientes_por_comerciales = self.env['res.partner'].sudo().search([
+            _logger.info(f"- Comerciales encontrados: {len(comerciales_ids)} - IDs: {comerciales_ids}")
+
+            # Obtener IDs de clientes creados por comerciales (CON CONTEXTO SKIP)
+            clientes_por_comerciales = self.env['res.partner'].with_context(skip_custom_search=True).sudo().search([
                 ('worker', '=', False),
                 ('supervisor', '=', False),
                 ('external', '=', False),
                 ('create_uid.partner_id', 'in', comerciales_ids),
                 ('internal_company_id', '=', partner.internal_company_id.id)
             ]).ids
-            
-            _logger.info(f"   - Clientes creados por comerciales: {len(clientes_por_comerciales)}")
-            
-            # NUEVO: Obtener clientes creados por el supervisor mismo
-            clientes_por_supervisor = self.env['res.partner'].sudo().search([
+
+            # Obtener clientes creados por el supervisor mismo (CON CONTEXTO SKIP)
+            clientes_por_supervisor = self.env['res.partner'].with_context(skip_custom_search=True).sudo().search([
                 ('worker', '=', False),
                 ('supervisor', '=', False),
                 ('external', '=', False),
                 ('create_uid', '=', current_user.id),
                 ('internal_company_id', '=', partner.internal_company_id.id)
             ]).ids
-            
-            _logger.info(f"   - Clientes creados por este supervisor: {len(clientes_por_supervisor)}")
-            
+            _logger.info(f"- Clientes creados por este supervisor: {len(clientes_por_supervisor)}")
+
             # Combinar ambos tipos de clientes
             todos_clientes_ids = list(set(clientes_por_comerciales + clientes_por_supervisor))
-            
-            _logger.info(f"   - Total clientes visibles: {len(todos_clientes_ids)}")
-            
+            _logger.info(f"- Total clientes visibles: {len(todos_clientes_ids)}")
+
+            # Construir dominio correctamente
             supervisor_domain = [
-                '|', '|', '|', '|',  # 5 condiciones con 4 OR
-                ('id', '=', partner.id),  # 1. Sí mismo
-                '&', '&',  # 2. Comerciales de su departamento y empresa
-                    ('worker', '=', True),
-                    ('department', 'in', partner.department.ids),
-                    ('internal_company_id', '=', partner.internal_company_id.id),
-                '&',  # 3. Externos asignados
-                    ('external', '=', True),
-                    ('supervisores_ids', 'in', [partner.id]),
-                '&', '&', '&',  # 4. Clientes sin rol
-                    ('worker', '=', False),
-                    ('supervisor', '=', False),
-                    ('external', '=', False),
-                    ('id', 'in', todos_clientes_ids),
-                '&',  # 5. Contactos creados por externos
-                    ('create_uid.partner_id.external', '=', True),
-                    ('create_uid.partner_id.supervisores_ids', 'in', [partner.id])
+                '|', '|', '|', '|',
+                ('id', '=', partner.id),
+                '&', '&',
+                ('worker', '=', True),
+                ('department', 'in', partner.department.ids),
+                ('internal_company_id', '=', partner.internal_company_id.id),
+                '&',
+                ('external', '=', True),
+                ('supervisores_ids', 'in', [partner.id]),
+                '&', '&', '&',
+                ('worker', '=', False),
+                ('supervisor', '=', False),
+                ('external', '=', False),
+                ('id', 'in', todos_clientes_ids if todos_clientes_ids else [False]),
+                '&',
+                ('create_uid.partner_id.external', '=', True),
+                ('create_uid.partner_id.supervisores_ids', 'in', [partner.id])
             ]
-            
-            _logger.info(f"📋 Aplicando dominio supervisor con {len(todos_clientes_ids)} clientes")
-            
-            result = super(ResPartner, self.sudo()).search(
-                args + supervisor_domain, offset, limit, order, count
-            )
-            
-            _logger.info(f"✅ Resultado: {result if count else len(result)} registros")
+
+            _logger.info(f"Aplicando dominio supervisor con {len(todos_clientes_ids)} clientes")
+            result = super(ResPartner, self).search(args + supervisor_domain, offset, limit, order, count)
+            _logger.info(f"Resultado: {result if count else len(result)} registros")
             return result
-        
+
         # EXTERNO
-        elif partner.external:
-            _logger.info(f"🔍 EXTERNO search - Usuario: {partner.name}")
-            
+        if partner.external:
+            _logger.info(f"EXTERNO search - Usuario {partner.name}")
             external_domain = [
                 '|',
                 ('id', '=', partner.id),
-                ('id', 'in', partner.comerciales_asignados_ids.ids)
+                ('id', 'in', partner.comerciales_asignados_ids.ids if partner.comerciales_asignados_ids else [False])
             ]
-            
-            return super(ResPartner, self.sudo()).search(
-                args + external_domain, offset, limit, order, count
-            )
-        
-        # COMERCIAL
-        elif partner.worker:
-            _logger.info(f"🔍 COMERCIAL search - Usuario: {partner.name} (ID: {partner.id})")
-            
-            worker_domain = [
-                '|',
-                ('id', '=', partner.id),  # Sí mismo
-                ('comercial_asignado_id', '=', partner.id)  # Clientes asignados
-            ]
-            
-            _logger.info(f"📋 Worker domain: {worker_domain}")
-            
-            result = super(ResPartner, self.sudo()).search(
-                args + worker_domain, offset, limit, order, count
-            )
-            
-            _logger.info(f"✅ Resultado comercial: {result if count else len(result)} registros")
-            if not count:
-                _logger.info(f"   - IDs encontrados: {result.ids}")
-            
-            return result
-        
-        # OTRO ROL
-        else:
-            _logger.info(f"⚠️ Usuario sin rol específico")
-            return super(ResPartner, self.sudo()).search(
-                args + [('id', '=', partner.id)], offset, limit, order, count
-            )
+            return super(ResPartner, self).search(args + external_domain, offset, limit, order, count)
 
+        # OTRO ROL
+        _logger.info("Usuario sin rol específico")
+        return super(ResPartner, self).search(args + [('id', '=', partner.id)], offset, limit, order, count)
 
 
 
@@ -823,34 +858,49 @@ class ResPartner(models.Model):
     def search_read(self, domain=None, fields=None, offset=0, limit=None, order=None):
         """
         Filtros personalizados de visibilidad por rol.
-        Usa sudo() para bypassear las reglas de seguridad de Odoo.
         """
         if domain is None:
             domain = []
-        
+
         current_user = self.env.user
-        
-        _logger.info(f"🔍 SEARCH_READ llamado por usuario: {current_user.name}")
-        
+        _logger.info(f"SEARCH_READ llamado por usuario {current_user.name}")
+
         # Admin ve todo
         if self.env.is_admin():
+            _logger.info("Es admin - Sin restricciones")
             return super(ResPartner, self).search_read(domain, fields, offset, limit, order)
-        
+
         if not current_user.partner_id:
-            return super(ResPartner, self.sudo()).search_read([('id', '=', False)], fields, offset, limit, order)
-        
+            _logger.warning(f"Usuario sin partner_id asociado")
+            return super(ResPartner, self).search_read(domain + [('id', '=', False)], fields, offset, limit, order)
+
         partner = current_user.partner_id
-        
+        _logger.info(f"- Roles: worker={partner.worker}, supervisor={partner.supervisor}, external={partner.external}")
+
+        # COMERCIAL
+        if partner.worker:
+            _logger.info(f"COMERCIAL search_read - Usuario {partner.name}")
+            worker_domain = [
+                '|', 
+                ('id', '=', partner.id),
+                ('comercial_asignado_id', '=', partner.id)
+            ]
+            _logger.info(f"Worker domain: {worker_domain}")
+            return super(ResPartner, self).search_read(domain + worker_domain, fields, offset, limit, order)
+
         # SUPERVISOR
         if partner.supervisor:
-            _logger.info(f"🔍 SUPERVISOR search_read - Usuario: {partner.name}")
+            _logger.info(f"SUPERVISOR search_read - Usuario {partner.name}")
             
+            # Obtener IDs de comerciales
             comerciales_ids = self.env['res.partner'].sudo().search([
                 ('worker', '=', True),
                 ('department', 'in', partner.department.ids),
                 ('internal_company_id', '=', partner.internal_company_id.id)
             ]).ids
-            
+            _logger.info(f"- Comerciales encontrados: {len(comerciales_ids)}")
+
+            # Obtener IDs de clientes creados por comerciales
             clientes_por_comerciales = self.env['res.partner'].sudo().search([
                 ('worker', '=', False),
                 ('supervisor', '=', False),
@@ -858,8 +908,8 @@ class ResPartner(models.Model):
                 ('create_uid.partner_id', 'in', comerciales_ids),
                 ('internal_company_id', '=', partner.internal_company_id.id)
             ]).ids
-            
-            # NUEVO: Clientes creados por el supervisor
+
+            # Obtener clientes creados por el supervisor mismo
             clientes_por_supervisor = self.env['res.partner'].sudo().search([
                 ('worker', '=', False),
                 ('supervisor', '=', False),
@@ -867,61 +917,45 @@ class ResPartner(models.Model):
                 ('create_uid', '=', current_user.id),
                 ('internal_company_id', '=', partner.internal_company_id.id)
             ]).ids
-            
+
             todos_clientes_ids = list(set(clientes_por_comerciales + clientes_por_supervisor))
-            
+            _logger.info(f"- Total clientes visibles: {len(todos_clientes_ids)}")
+
+            # Construir dominio correctamente
             supervisor_domain = [
                 '|', '|', '|', '|',
                 ('id', '=', partner.id),
                 '&', '&',
-                    ('worker', '=', True),
-                    ('department', 'in', partner.department.ids),
-                    ('internal_company_id', '=', partner.internal_company_id.id),
+                ('worker', '=', True),
+                ('department', 'in', partner.department.ids),
+                ('internal_company_id', '=', partner.internal_company_id.id),
                 '&',
-                    ('external', '=', True),
-                    ('supervisores_ids', 'in', [partner.id]),
+                ('external', '=', True),
+                ('supervisores_ids', 'in', [partner.id]),
                 '&', '&', '&',
-                    ('worker', '=', False),
-                    ('supervisor', '=', False),
-                    ('external', '=', False),
-                    ('id', 'in', todos_clientes_ids),
+                ('worker', '=', False),
+                ('supervisor', '=', False),
+                ('external', '=', False),
+                ('id', 'in', todos_clientes_ids if todos_clientes_ids else [False]),
                 '&',
-                    ('create_uid.partner_id.external', '=', True),
-                    ('create_uid.partner_id.supervisores_ids', 'in', [partner.id])
+                ('create_uid.partner_id.external', '=', True),
+                ('create_uid.partner_id.supervisores_ids', 'in', [partner.id])
             ]
-            
-            return super(ResPartner, self.sudo()).search_read(
-                domain + supervisor_domain, fields, offset, limit, order
-            )
-        
+
+            _logger.info(f"Aplicando dominio supervisor")
+            return super(ResPartner, self).search_read(domain + supervisor_domain, fields, offset, limit, order)
+
         # EXTERNO
-        elif partner.external:
+        if partner.external:
+            _logger.info(f"EXTERNO search_read - Usuario {partner.name}")
             external_domain = [
                 '|',
                 ('id', '=', partner.id),
-                ('id', 'in', partner.comerciales_asignados_ids.ids)
+                ('id', 'in', partner.comerciales_asignados_ids.ids if partner.comerciales_asignados_ids else [False])
             ]
-            
-            return super(ResPartner, self.sudo()).search_read(
-                domain + external_domain, fields, offset, limit, order
-            )
-        
-        # COMERCIAL
-        elif partner.worker:
-            _logger.info(f"🔍 COMERCIAL search_read - Usuario: {partner.name}")
-            
-            worker_domain = [
-                '|',
-                ('id', '=', partner.id),
-                ('comercial_asignado_id', '=', partner.id)
-            ]
-            
-            return super(ResPartner, self.sudo()).search_read(
-                domain + worker_domain, fields, offset, limit, order
-            )
-        
+            return super(ResPartner, self).search_read(domain + external_domain, fields, offset, limit, order)
+
         # OTRO ROL
-        else:
-            return super(ResPartner, self.sudo()).search_read(
-                domain + [('id', '=', partner.id)], fields, offset, limit, order
-            )
+        _logger.info("Usuario sin rol específico")
+        return super(ResPartner, self).search_read(domain + [('id', '=', partner.id)], fields, offset, limit, order)
+
